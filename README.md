@@ -2,269 +2,287 @@
 
 **English** · [中文](#telecom360-threejs-中文)
 
-Modern **360° equirectangular panorama editor & offline viewer**, rebuilt from the legacy Telecom360 (Marzipano) workflow with **three.js + TypeScript**.  
-Designed for **intranet / IIS static hosting**: edit locally, **export a ZIP**, and **copy files to the server**.
+360° panorama **editor** and **offline viewer** for site / room walkthroughs.  
+Publish by **exporting a ZIP** and **copying files into the IIS website root** (same idea as legacy Telecom360).
 
-| Role | URL |
-|------|-----|
-| **Editor** | `http://{host}:8888/` (local or static IIS) |
-| **Published viewer** | `http://{host}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
-
----
-
-## Product purpose
-
-- Capture and present **site / room / date** panoramic walkthroughs (e.g. telecom / control-room surveys).
-- Support **high-resolution** equirectangular images (e.g. **11904×5952**).
-- Produce a **self-contained offline package** (no CDN, no cloud dependency).
-- Align with existing CLP deployment habit: place content under **`C:\inetpub\wwwroot`**.
+| What | URL (example) |
+|------|----------------|
+| Editor | `http://{server}/` or `http://{server}:8888/` |
+| Published tour | `http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
 
 ---
 
-## Functional overview
+## What this product does
 
-### Editor
-
-| Feature | Description |
-|---------|-------------|
-| Multi-scene project | Upload multiple 2:1 panoramas; rename, delete, **drag to reorder** |
-| Project metadata | **Required:** project name, `SITE_CODE`, `ROOM_NAME`, `PHOTO_DATE` |
-| Info hotspots | Place annotation pins (title + body); drag to reposition |
-| Scene-link hotspots | Jump to another scene with fly-style transition |
-| Initial view | Save default yaw / pitch for each scene |
-| 3D movement (parallax) | Always on: **WASD / QE** walk within limited radius (no toggle) |
-| View controls | Drag to rotate, mouse wheel to zoom (FOV) |
-| Export ZIP | Download package layout matching IIS paths |
-| Open package | Re-import a previously exported ZIP for further editing |
-| UI language / brand | Traditional Chinese UI + CLP logo |
-
-### Viewer (published package)
-
-| Feature | Description |
-|---------|-------------|
-| Offline three.js | Ships `vendor/three.module.js` + `three.core.js` (no CDN) |
-| Hotspots | Info popups + scene navigation |
-| Auto-rotate | **Button available**, default **OFF** |
-| Fullscreen | **Button always available** |
-| 3D movement | **Always ON** (WASD/QE); no 3D toggle button |
-| Scene list | Switch scenes from the on-screen list |
-
-### Publishing model (manual copy)
-
-```text
-1. Edit in the browser (local Editor)
-2. Fill project name + SITE / ROOM / DATE
-3. Click「匯出 ZIP」
-4. Unzip / copy into web root, e.g. C:\inetpub\wwwroot
-5. Open: http://{server}/site/{SITE}/{ROOM}/{DATE}/
-```
-
-**Server needs only static web hosting (IIS recommended).** No Node runtime, no reverse proxy, no deploy API on the server.
+- Build multi-scene **equirectangular** tours (including high-res images such as 11904×5952).
+- Add **info annotations** and **links between scenes**.
+- Set each scene’s **initial view**.
+- Walk slightly in 3D with **WASD / QE** (always on).
+- **Export a self-contained package** (no internet CDN required).
+- Deploy by **manual copy** to `C:\inetpub\wwwroot` (or your IIS site root).
 
 ---
 
-## Export ZIP layout
+## Old Telecom360 → this version
 
-```text
-site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
-  index.html              ← standalone viewer (small; images not base64)
-  project.json            ← scene graph (no embedded dataUrls)
-  vendor/
-    three.module.js
-    three.core.js
-  assets/source/*.jpg     ← one copy of each panorama
-README.txt
-```
+| | Legacy (Marzipano era) | Telecom360-Three.js |
+|--|------------------------|---------------------|
+| Engine | Marzipano | **three.js (WebGL 2)** |
+| Language / structure | Older stack | **TypeScript**, modern editor UI |
+| Package format | Old ZIP **not compatible** | New ZIP / folder layout only |
+| Offline 3D library | Often CDN-dependent patterns | **Ships `vendor/` Three.js files offline** |
+| Server publish | Copy to IIS `wwwroot` | **Same: copy only** (no server Node app) |
+| One-click server deploy API | — | **Not used** (removed on purpose for simple ops) |
 
----
+### Removed (by design)
 
-## Technology stack
+- Compatibility with **old Marzipano ZIPs**
+- **External URL** hotspots (v1)
+- **Real-world mm measurement** on a single 360° photo (no depth data)
+- **Server-side one-click deploy** / Node backend on production IIS
 
-| Layer | Choice |
-|-------|--------|
-| Language | **TypeScript** |
-| Build | **Vite 6** |
-| 3D / panorama | **three.js r172** (WebGL) |
-| Packaging | **JSZip** (browser export) |
-| Local preview (optional) | **Node.js + Express** (static only; no deploy API) |
-| Production host | **IIS** static files under `C:\inetpub\wwwroot` |
-| UI | Custom CSS, **zh-Hant** copy, CLP brand assets |
+### Added / improved
 
-**Not used:** Marzipano, external CDN for Three.js, one-click server-side deploy API (removed by design for simpler ops).
+| Area | Improvement |
+|------|-------------|
+| Editor | Multi-scene list, drag reorder, rename/delete |
+| Hotspots | Info pins + scene jump, draggable on the sphere |
+| Transitions | Scene change with aim / fade style transition |
+| 3D move | Always-on WASD/QE walk (limited range) |
+| Viewer | Offline package; **Fullscreen** button; **Auto-rotate** button (default off) |
+| Metadata | Required **project name**, **SITE_CODE**, **ROOM_NAME**, **PHOTO_DATE** |
+| Export | ZIP path matches IIS: `site/{SITE}/{ROOM}/{DATE}/` |
+| Ops | **Only copy files to IIS** — no app server to keep running |
 
----
+### New technology (summary)
 
-## Local development
-
-```powershell
-cd path\to\Telecom360-Three.js
-npm.cmd install
-npm.cmd run dev
-```
-
-- Editor: http://127.0.0.1:8888/
-
-```powershell
-npm.cmd run build
-npm.cmd start          # optional static preview of dist/
-```
-
-Optional local IIS (static site on port 8888):
-
-```powershell
-npm.cmd run build
-# Run as Administrator
-.\scripts\install-iis-8888.ps1
-```
-
-See [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md).
+| Layer | Technology |
+|-------|------------|
+| 3D / panorama | **three.js** (WebGL 2) |
+| App language | **TypeScript** |
+| Build | **Vite** |
+| Export package | **JSZip** (in browser) |
+| Hosting | **IIS static files** under website root |
 
 ---
 
-## Compatibility notes
+## For end users — how to use
 
-| Item | Status |
-|------|--------|
-| Legacy Marzipano ZIP | **Not supported** (new package format only) |
-| External URL hotspots | Not in v1 |
-| Metric measurement on single 360° | Not feasible without depth → not included |
-| KTX2 / WebGPU | Future optional enhancement |
+### A. Install / update the Editor on a PC or server (IIS)
 
----
+You only need **IIS** and a website pointing at a folder (often `C:\inetpub\wwwroot`).
 
-## Repository layout (high level)
+1. Get the **built website files** for the Editor  
+   (the `dist` output, or a prepared folder that already contains `index.html`, `assets\`, `brand\`, `vendor\`, etc.).
+2. **Copy** those files into the **IIS site root**, for example:
+   - `C:\inetpub\wwwroot\`
+3. Keep or add a simple `web.config` if your site needs MIME types for `.json` / `.mjs` (sample is in the release package / `docs`).
+4. Open the site in a browser, e.g. `http://localhost/` or `http://{server}/`.
 
-```text
-src/                 Editor + viewer source (TS)
-public/              Brand + vendor three.js for offline
-server/              Optional local static preview (dev/start)
-scripts/             IIS stage / install helpers
-docs/                IIS deploy notes
-```
+No Node.js install is required on the server for normal use.
 
----
+> Details: [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)
 
-## License / ownership
+### B. Create a tour (Editor)
 
-Private / internal use. CLP logo and brand assets remain company property.
+1. Open the Editor in the browser.
+2. Enter **Project name** (required), e.g. `FOS ControlRoom`.
+3. Enter **SITE_CODE**, **ROOM_NAME**, **PHOTO_DATE** (required; used in the publish path).
+4. **Add panorama images** (equirectangular JPG/PNG, roughly 2:1).
+5. Optional: add **annotations**, **scene links**, set **initial view**, reorder scenes.
+6. Click **Export ZIP**.
 
----
+### C. Publish a tour (manual copy)
 
-# Telecom360-Three.js（中文）
+1. Unzip the exported file **into the IIS website root**  
+   (or copy the folder so you get):
 
-以 **three.js + TypeScript** 重構的 **360° 全景編輯器與離線檢視器**，承接舊版 Telecom360（Marzipano）的使用場景。  
-定位為 **內網 / IIS 靜態站**：本機編輯 → **匯出 ZIP** → **人手複製到伺服器**。
+   ```text
+   {IIS root}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
+     index.html
+     project.json
+     vendor\
+     assets\source\
+   ```
 
-| 角色 | 網址 |
-|------|------|
-| **編輯器** | `http://{主機}:8888/` |
-| **已發佈檢視器** | `http://{主機}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+2. Open:
 
----
+   ```text
+   http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
+   ```
 
-## 產品目的
+3. To edit again later: in the Editor use **Open package** and select the same ZIP.
 
-- 以 **站點 / 機房 / 拍攝日期** 管理全景導覽（例如電訊／控制室巡查）。
-- 支援 **高解析度** equirectangular 影像（例如 **11904×5952**）。
-- 產出 **完全離線** 的套件（不依賴 CDN / 外網）。
-- 與現有做法一致：內容放在 **`C:\inetpub\wwwroot`**。
+### Viewer controls (published page)
 
----
-
-## 功能摘要
-
-### 編輯器
-
-| 功能 | 說明 |
-|------|------|
-| 多場景專案 | 上傳多張約 2:1 全景；重新命名、刪除、**拖曳排序** |
-| 專案欄位 | **必填：** 專案名稱、`SITE_CODE`、`ROOM_NAME`、`PHOTO_DATE` |
-| 注解標示 | 標題 + 內容；可拖曳位置 |
-| 場景連結 | 跳至其他場景（轉場） |
-| 初始視角 | 為每場景儲存預設視角 |
-| 3D 移動 | **預設開啟**：WASD / QE（無開關掣） |
-| 視角操作 | 拖曳旋轉、滾輪縮放 |
-| 匯出 ZIP | 下載與 IIS 路徑一致的套件 |
-| 開啟套件 | 載入既有 ZIP 繼續編輯 |
-| 介面 | 繁體中文 + CLP LOGO |
-
-### 檢視器（發佈後）
-
-| 功能 | 說明 |
-|------|------|
-| 離線 three.js | 內含 `vendor/`（無 CDN） |
-| 熱點 | 注解彈窗 + 場景跳轉 |
-| 自動旋轉 | **有按鈕**，預設 **關閉** |
-| 全螢幕 | **有按鈕**（固定提供） |
-| 3D 移動 | **預設開啟**，無 3D 開關掣 |
-| 場景列表 | 可切換場景 |
-
-### 發佈方式（人手複製）
-
-```text
-1. 本機編輯
-2. 填寫專案名稱 + SITE / ROOM / DATE
-3. 按「匯出 ZIP」
-4. 解壓／複製到網站根目錄（例如 C:\inetpub\wwwroot）
-5. 開啟：http://{伺服器}/site/{SITE}/{ROOM}/{DATE}/
-```
-
-**伺服器只需靜態網站（建議 IIS）。** 不需在伺服器安裝 Node、不需反向代理、不需部署 API。
+| Control | Behaviour |
+|---------|-----------|
+| Drag | Rotate view |
+| Mouse wheel | Zoom |
+| WASD / QE | 3D move (always on) |
+| Auto-rotate | Button on page, **default off** |
+| Fullscreen | Button on page |
 
 ---
 
-## 匯出 ZIP 結構
+## Export package layout
 
 ```text
 site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
   index.html
   project.json
-  vendor/three.module.js
-  vendor/three.core.js
-  assets/source/*.jpg
+  vendor/          ← offline three.js
+  assets/source/   ← panorama images
 README.txt
 ```
 
 ---
 
-## 技術架構
+## Notes
+
+- **Browser:** modern Chrome / Edge recommended (**WebGL 2**).
+- **Private / internal** use. CLP logo and brand assets remain company property.
+
+---
+
+# Telecom360-Three.js（中文）
+
+360° 全景 **編輯器** 與 **離線檢視器**，用於站點／機房導覽。  
+發佈方式：**匯出 ZIP**，再 **複製到 IIS 網站根目錄**（與舊版 Telecom360 一樣靠 copy）。
+
+| 項目 | 網址（例子） |
+|------|----------------|
+| 編輯器 | `http://{伺服器}/` 或 `http://{伺服器}:8888/` |
+| 已發佈導覽 | `http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+
+---
+
+## 產品能做什麼
+
+- 建立 **多場景** equirectangular 全景（可含高解像如 11904×5952）
+- 加入 **注解標示**、**場景之間跳轉**
+- 設定每場景 **初始視角**
+- 以 **WASD / QE** 輕微 3D 移動（預設開啟）
+- **匯出完整離線套件**（不需外網 CDN）
+- 以 **人手複製** 到 `C:\inetpub\wwwroot`（或你的 IIS 網站根）發佈
+
+---
+
+## 舊版 → 新版
+
+| | 舊版（Marzipano 時期） | 本版 Telecom360-Three.js |
+|--|------------------------|---------------------------|
+| 引擎 | Marzipano | **three.js（WebGL 2）** |
+| 結構 | 舊技術棧 | **TypeScript**、新編輯介面 |
+| 套件格式 | 舊 ZIP **不相容** | 僅新格式 |
+| 離線 3D 庫 | 常依賴外網／CDN 模式 | **套件內附 `vendor/`** |
+| 上線方式 | Copy 到 IIS `wwwroot` | **同樣只 copy**（伺服器不必跑 Node） |
+| 伺服器一鍵部署 API | — | **不做**（簡化維運） |
+
+### 刪除了什麼（刻意）
+
+- 舊 **Marzipano ZIP** 相容
+- **外部網址** 熱點（v1）
+- 單張 360 的 **真實尺寸量測**（無深度資料）
+- 正式環境的 **一鍵部署後端／Node 服務**
+
+### 新增多了／更好了什麼
+
+| 範圍 | 說明 |
+|------|------|
+| 編輯器 | 多場景、拖曳排序、重新命名／刪除 |
+| 熱點 | 注解 + 跳場景，可拖位置 |
+| 轉場 | 場景切換有對準／淡入效果 |
+| 3D 移動 | WASD/QE 預設開（無開關掣） |
+| 檢視器 | 全離線；**全螢幕**掣；**自動旋轉**掣（預設關） |
+| 欄位 | 必填：專案名稱、SITE、ROOM、DATE |
+| 匯出 | 路徑對齊 IIS：`site/{SITE}/{ROOM}/{DATE}/` |
+| 維運 | **只需 copy 到 IIS**，不用長期開後台程式 |
+
+### 用了什麼新技術（摘要）
 
 | 層級 | 技術 |
 |------|------|
-| 語言 | **TypeScript** |
-| 建置 | **Vite 6** |
-| 全景 / 3D | **three.js r172**（WebGL） |
-| 打包 | **JSZip**（瀏覽器匯出） |
-| 本機預覽（可選） | **Node.js + Express**（只提供靜態，無部署 API） |
-| 正式環境 | **IIS** 靜態檔案（`C:\inetpub\wwwroot`） |
-| UI | 自訂 CSS、**繁中**、CLP 品牌素材 |
-
-**不採用：** Marzipano、Three.js CDN、伺服器端一鍵部署 API（為簡化維運而移除）。
+| 全景 / 3D | **three.js**（WebGL 2） |
+| 開發語言 | **TypeScript** |
+| 建置 | **Vite** |
+| 匯出 | **JSZip**（瀏覽器內打包） |
+| 上線 | **IIS 靜態網站** |
 
 ---
 
-## 本機開發
+## 使用說明（給一般使用者）
 
-```powershell
-npm.cmd install
-npm.cmd run dev
+### 甲、安裝／更新編輯器（IIS）
+
+只需 **IIS**，以及網站實體路徑（多數是 `C:\inetpub\wwwroot`）。
+
+1. 取得編輯器的 **網站檔案**  
+   （內含 `index.html`、`assets\`、`brand\`、`vendor\` 等）。
+2. **全部複製** 到 IIS 網站根目錄，例如：
+   - `C:\inetpub\wwwroot\`
+3. 如需要，保留／放入 `web.config`（`.json` / `.mjs` 的 MIME；見發佈包或 `docs`）。
+4. 用瀏覽器開啟，例如 `http://localhost/` 或 `http://{伺服器}/`。
+
+伺服器 **不必安裝 Node.js** 才能日常使用。
+
+> 較細說明：[docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)
+
+### 乙、製作導覽（編輯器）
+
+1. 瀏覽器開啟編輯器。
+2. 填 **專案名稱**（必填），例如 `FOS ControlRoom`。
+3. 填 **SITE_CODE**、**ROOM_NAME**、**PHOTO_DATE**（必填；決定發佈路徑）。
+4. **新增全景圖片**（約 2:1 的 equirectangular JPG/PNG）。
+5. 可選：注解、場景連結、初始視角、調整場景順序。
+6. 按 **匯出 ZIP**。
+
+### 丙、發佈導覽（人手複製）
+
+1. 將 ZIP **解壓到 IIS 網站根目錄**（或複製資料夾），使出現：
+
+   ```text
+   {IIS 根目錄}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
+     index.html
+     project.json
+     vendor\
+     assets\source\
+   ```
+
+2. 瀏覽器開啟：
+
+   ```text
+   http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
+   ```
+
+3. 之後要再改：編輯器選 **開啟專案套件**，載入同一個 ZIP。
+
+### 檢視器操作（發佈後頁面）
+
+| 操作 | 說明 |
+|------|------|
+| 拖曳 | 旋轉視角 |
+| 滾輪 | 縮放 |
+| WASD / QE | 3D 移動（預設開） |
+| 自動旋轉 | 頁面有按鈕，**預設關** |
+| 全螢幕 | 頁面有按鈕 |
+
+---
+
+## 匯出套件結構
+
+```text
+site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
+  index.html
+  project.json
+  vendor/          ← 離線 three.js
+  assets/source/   ← 全景圖
+README.txt
 ```
 
-詳見 [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)。
-
 ---
 
-## 相容性說明
+## 其他
 
-| 項目 | 狀態 |
-|------|------|
-| 舊 Marzipano ZIP | **不相容**（僅新格式） |
-| 外部 URL 熱點 | v1 不做 |
-| 單張 360 真實尺寸量測 | 無深度資訊 → 不納入 |
-| KTX2 / WebGPU | 預留後續優化 |
-
----
-
-## 授權
-
-內部／私人使用。CLP LOGO 與品牌資產屬公司所有。
+- **瀏覽器：** 建議新版 Chrome / Edge（需 **WebGL 2**）。
+- **內部使用。** CLP LOGO 與品牌資產屬公司所有。
