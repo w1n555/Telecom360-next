@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, directionToSpherical, sphericalToDirection } from '../utils/math';
-import type { ProjectSettings, ViewParams } from '../core/types/project';
+import { FOV_MAX, FOV_MIN, type ProjectSettings, type ViewParams } from '../core/types/project';
 
 export interface EngineCallbacks {
   onViewChange?: (view: ViewParams) => void;
@@ -23,9 +23,10 @@ export class PanoramaEngine {
   private settings: ProjectSettings;
   private yaw = 0;
   private pitch = 0;
-  private fov = Math.PI / 2;
+  private fov = FOV_MAX;
   private offset = new THREE.Vector3();
   private parallaxEnabled = false;
+  private autorotate = false;
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -86,6 +87,19 @@ export class PanoramaEngine {
     }
   }
 
+  setAutorotate(on: boolean) {
+    this.autorotate = on;
+  }
+
+  get isAutorotating() {
+    return this.autorotate;
+  }
+
+  /** Stop idle spin when user interacts */
+  interruptAutorotate() {
+    if (this.autorotate) this.autorotate = false;
+  }
+
   getView(): ViewParams {
     return { yaw: this.yaw, pitch: this.pitch, fov: this.fov };
   }
@@ -93,7 +107,7 @@ export class PanoramaEngine {
   setView(view: ViewParams, instant = true) {
     this.yaw = view.yaw;
     this.pitch = clamp(view.pitch, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
-    this.fov = clamp(view.fov, THREE.MathUtils.degToRad(40), THREE.MathUtils.degToRad(100));
+    this.fov = clamp(view.fov, FOV_MIN, FOV_MAX);
     if (instant) this.offset.set(0, 0, 0);
     this.applyView();
   }
@@ -199,9 +213,12 @@ export class PanoramaEngine {
     return directionToSpherical(p);
   }
 
-  /** Animate look toward yaw/pitch then optional FOV push */
-  async aimAndPush(targetYaw: number, targetPitch: number, ms = 400): Promise<void> {
+  /**
+   * Aim at hotspot icon and zoom in ~30% (FOV × 0.7), then caller fades to next scene.
+   */
+  async aimAndZoomIn(targetYaw: number, targetPitch: number, ms = 380): Promise<void> {
     const start = this.getView();
+    const endFov = clamp(start.fov * 0.7, FOV_MIN, FOV_MAX); // ~30% zoom-in
     const t0 = performance.now();
     await new Promise<void>((resolve) => {
       const step = () => {
@@ -210,13 +227,34 @@ export class PanoramaEngine {
         const e = u * u * (3 - 2 * u);
         this.yaw = start.yaw + (targetYaw - start.yaw) * e;
         this.pitch = start.pitch + (targetPitch - start.pitch) * e;
-        this.fov = start.fov + (start.fov * 0.82 - start.fov) * e;
+        this.fov = start.fov + (endFov - start.fov) * e;
         this.applyView();
         if (u < 1) requestAnimationFrame(step);
         else resolve();
       };
       requestAnimationFrame(step);
     });
+  }
+
+  /** @deprecated use aimAndZoomIn */
+  async aimAndPush(targetYaw: number, targetPitch: number, ms = 380): Promise<void> {
+    return this.aimAndZoomIn(targetYaw, targetPitch, ms);
+  }
+
+  /** Clear panorama texture (empty project / all scenes deleted) */
+  clearTexture() {
+    if (this.texture) {
+      this.texture.dispose();
+      this.texture = null;
+    }
+    this.material.map = null;
+    this.material.color.set(0x222833);
+    this.material.needsUpdate = true;
+    this.offset.set(0, 0, 0);
+    this.yaw = 0;
+    this.pitch = 0;
+    this.fov = FOV_MAX;
+    this.applyView();
   }
 
   resize() {
@@ -270,30 +308,75 @@ export class PanoramaEngine {
       if (this.offset.length() < 0.02) this.offset.set(0, 0, 0);
       this.applyView();
     }
+    // gentle yaw spin when idle
+    if (this.autorotate && !this.dragging && this.keys.size === 0) {
+      this.yaw -= 0.0018;
+      this.applyView();
+    }
     this.renderer.render(this.scene, this.camera);
   };
 
   private tickMovement() {
-    if (!this.parallaxEnabled) return;
     if (!this.keys.size) return;
     if (this.isFormFocus()) return;
-    const speed = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 0.55 : 0.28);
-    const forward = sphericalToDirection(this.yaw, 0);
-    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-    if (this.keys.has('KeyW')) this.offset.addScaledVector(forward, speed);
-    if (this.keys.has('KeyS')) this.offset.addScaledVector(forward, -speed);
-    if (this.keys.has('KeyA')) this.offset.addScaledVector(right, -speed);
-    if (this.keys.has('KeyD')) this.offset.addScaledVector(right, speed);
-    if (this.keys.has('KeyQ')) this.offset.y += speed;
-    if (this.keys.has('KeyE')) this.offset.y -= speed;
-    // arrows rotate when not form
-    const rot = 0.025 * (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 1.8 : 1);
-    if (this.keys.has('ArrowLeft')) this.yaw += rot;
-    if (this.keys.has('ArrowRight')) this.yaw -= rot;
-    if (this.keys.has('ArrowUp')) this.pitch += rot;
-    if (this.keys.has('ArrowDown')) this.pitch -= rot;
-    this.pitch = clamp(this.pitch, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
-    this.applyView();
+    const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 1.8 : 1;
+    let changed = false;
+
+    // Arrows always rotate view (even when 3D move is off)
+    const rot = 0.025 * boost;
+    // User feedback: previous mapping felt inverted → swap left/right
+    if (this.keys.has('ArrowLeft')) {
+      this.yaw -= rot;
+      changed = true;
+    }
+    if (this.keys.has('ArrowRight')) {
+      this.yaw += rot;
+      changed = true;
+    }
+    if (this.keys.has('ArrowUp')) {
+      this.pitch += rot;
+      changed = true;
+    }
+    if (this.keys.has('ArrowDown')) {
+      this.pitch -= rot;
+      changed = true;
+    }
+
+    // WASD/QE only in 3D move mode (larger step so walk feels useful within parallaxRadius)
+    if (this.parallaxEnabled) {
+      const speed = 1.15 * (boost > 1 ? 2.2 : 1);
+      const forward = sphericalToDirection(this.yaw, 0);
+      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+      if (this.keys.has('KeyW')) {
+        this.offset.addScaledVector(forward, speed);
+        changed = true;
+      }
+      if (this.keys.has('KeyS')) {
+        this.offset.addScaledVector(forward, -speed);
+        changed = true;
+      }
+      if (this.keys.has('KeyA')) {
+        this.offset.addScaledVector(right, -speed);
+        changed = true;
+      }
+      if (this.keys.has('KeyD')) {
+        this.offset.addScaledVector(right, speed);
+        changed = true;
+      }
+      if (this.keys.has('KeyQ')) {
+        this.offset.y += speed;
+        changed = true;
+      }
+      if (this.keys.has('KeyE')) {
+        this.offset.y -= speed;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.pitch = clamp(this.pitch, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
+      this.applyView();
+    }
   }
 
   private isFormFocus() {
@@ -319,6 +402,17 @@ export class PanoramaEngine {
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.isFormFocus()) return;
     this.keys.add(e.code);
+    if (
+      e.code.startsWith('Arrow') ||
+      e.code === 'KeyW' ||
+      e.code === 'KeyA' ||
+      e.code === 'KeyS' ||
+      e.code === 'KeyD' ||
+      e.code === 'KeyQ' ||
+      e.code === 'KeyE'
+    ) {
+      this.interruptAutorotate();
+    }
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
@@ -327,6 +421,7 @@ export class PanoramaEngine {
 
   private onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    this.interruptAutorotate();
     const hit = this.pickSpherical(e.clientX, e.clientY);
     if (hit) this.callbacks.onPointerDownSphere?.(hit.yaw, hit.pitch, e);
     this.dragging = true;
@@ -364,7 +459,7 @@ export class PanoramaEngine {
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
     const delta = Math.sign(e.deltaY) * 0.06;
-    this.fov = clamp(this.fov + delta, THREE.MathUtils.degToRad(40), THREE.MathUtils.degToRad(100));
+    this.fov = clamp(this.fov + delta, FOV_MIN, FOV_MAX);
     this.applyView();
   };
 }

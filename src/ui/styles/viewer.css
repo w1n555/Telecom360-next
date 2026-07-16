@@ -12,6 +12,7 @@
   gap: 12px;
   padding: 0 12px;
   background: #003f91;
+  flex-wrap: wrap;
 }
 
 .viewer-bar img {
@@ -21,6 +22,26 @@
 .viewer-bar .title {
   font-weight: 650;
   font-size: 14px;
+  flex: 1;
+}
+
+.viewer-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.viewer-tools button {
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.viewer-tools button.on {
+  background: #00a1e0;
 }
 
 .viewer-stage {
@@ -62,4 +83,84 @@
 .viewer-scenes button.active,
 .viewer-scenes button:hover {
   background: rgba(0, 161, 224, 0.25);
+}
+
+.viewer-stage .hotspot-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.viewer-stage .hotspot-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.viewer-stage .hotspot-pin .glyph {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  position: relative;
+}
+
+.viewer-stage .hotspot-pin .glyph::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0.5;
+  animation: hotspot-pulse 1.8s ease-out infinite;
+}
+
+.viewer-stage .hotspot-pin .glyph svg {
+  width: 20px;
+  height: 20px;
+}
+
+.viewer-stage .hotspot-pin.info .glyph {
+  background: radial-gradient(circle at 35% 30%, #4dc9f0, #00a1e0 55%, #0077a8);
+}
+
+.viewer-stage .hotspot-pin.scene .glyph {
+  background: radial-gradient(circle at 35% 30%, #3d6fd4, #003f91 55%, #001f4d);
+}
+
+.viewer-stage .hotspot-pin .pin-label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes hotspot-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.65;
+  }
+  70% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
 }

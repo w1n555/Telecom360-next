@@ -1,26 +1,38 @@
 # Telecom360-Three.js
 
-用 **three.js + TypeScript** 重構的 360° 全景 **編輯器 + 靜態檢視器**，對齊舊 Telecom360 工作流，進化專案（**不相容**舊 Marzipano ZIP）。
+用 **three.js + TypeScript** 重構的 360° 全景 **編輯器 + 靜態檢視器**。  
+進化專案：**不相容**舊 Marzipano ZIP；**無 CDN**（Three.js 隨包 `vendor/`）。
 
-| 角色 | URL（範例） |
-|------|-------------|
-| **Editor** | `http://165.202.7.33:8888/` |
-| **已部署 Viewer** | `http://165.202.7.33:8888/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+| 角色 | URL |
+|------|-----|
+| **Editor** | `http://{host}:8888/` |
+| **已部署 Viewer** | `http://{host}:8888/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
 
-## 功能（v1）
+---
 
-- 多場景管理（典型 5–20 張 equirect，支援約 **11904×5952** JPG）
-- Hotspot：**info**（注解）／**scene**（跳場景，等同舊 link）
-- 拖曳編輯、設置初始視角
-- 測量（相對單位）
-- 大 Sphere + **有限 3D 移動**（預設關，±約 10）
-- 場景切換平滑轉場
-- **匯出 ZIP**（standalone viewer + 可再 import 編輯）
-- **一鍵部署**：寫入 `site/{SITE}/{ROOM}/{DATE}/`，IIS 即開即睇
-- 繁體中文 UI、公司 LOGO
-- 外部 URL hotspot → 之後；舊 ZIP import → 不做
+## 功能現況（v1）
 
-## 快速開始（本機）
+| 功能 | 狀態 |
+|------|------|
+| 多場景上傳 equirect（含 11904×5952） | ✅ |
+| 場景拖曳排序、重新命名、刪除 | ✅ |
+| Hotspot info / scene（跳場景）+ 拖曳 | ✅ |
+| 初始視角 | ✅ |
+| 場景轉場（對準 icon zoom 30% → fade） | ✅ |
+| 大 Sphere + 3D 移動 WASD/QE（可開關，範圍 ±120） | ✅ |
+| 匯出 ZIP（結構 = 部署路徑，圖片只一份） | ✅ |
+| 開啟套件 re-import | ✅ |
+| 一鍵部署 → `site/S/R/D/` + 進度 % + 成功連結卡片 | ✅ |
+| Viewer：旋轉／縮放／熱點／3D 移動／自動旋轉／全螢幕 | ✅ |
+| 繁中 UI + CLP LOGO | ✅ |
+| Offline three（module + core） | ✅ |
+| 測量 | ❌ 已移除（單張 360 無深度無法真 mm） |
+| 外部 URL hotspot / 舊 ZIP | ❌ 不做（v1） |
+| KTX2 / WebGPU | ⏳ 之後 |
+
+---
+
+## 快速開始
 
 ```powershell
 cd C:\Users\W1NGGG\Documents\Telecom360-Three.js
@@ -28,67 +40,60 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-預設：**http://127.0.0.1:8888/**  
-一鍵部署寫入專案目錄：`.\site\{SITE}\{ROOM}\{DATE}\`
+- Editor：http://127.0.0.1:8888/  
+- 部署寫入：`.\site\{SITE}\{ROOM}\{DATE}\`  
+- 健康檢查：http://127.0.0.1:8888/api/health  
+- 已部署列表：http://127.0.0.1:8888/api/sites  
 
-## 建置靜態檔
+### 建置 + 正式跑
 
 ```powershell
 npm.cmd run build
+$env:PORT = "8888"
+# 可選：寫入 IIS 站台根
+# $env:T360_WEB_ROOT = "C:\inetpub\wwwroot\Telecom360"
 npm.cmd start
 ```
 
-- `dist/` = Editor 靜態資源  
-- `npm start` = 以 Node 提供 `dist` + `/api/deploy` + `/site`（port 8888）
-
-### 指定 IIS 實體根目錄（真·寫入 IIS 站台）
+### 離線 Viewer POC（開發用）
 
 ```powershell
-$env:T360_WEB_ROOT = "C:\inetpub\wwwroot\Telecom360"   # 你的 8888 站台實體路徑
-$env:PORT = "8888"
-npm.cmd start
+node scripts/poc_viewer_package.mjs
+# 然後開 http://127.0.0.1:8888/site/POC/POC/verify/
 ```
 
-一鍵部署會寫入：
+---
+
+## Export ZIP 結構（= 一鍵部署路徑）
 
 ```text
-{T360_WEB_ROOT}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
+site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
+  index.html              ← 小檔（無 base64 圖）
+  project.json            ← 無 dataUrl
+  vendor/
+    three.module.js
+    three.core.js         ← 必須，無 CDN
+  assets/source/*.jpg     ← 圖片只一份
+README.txt
 ```
 
-瀏覽：
+解壓到 Web 根目錄後 URL 與一鍵部署相同。
 
-```text
-http://{host}:8888/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
-```
+---
 
-> 純 IIS 靜態站**無法**讓瀏覽器直接寫碟。一鍵部署依賴同站 **`POST /api/deploy`**（本 repo 的 Node 服務）。可把 Node 當後端、IIS 反代，或直接用 `npm start` 聽 8888。
+## 操作摘要
 
-## 使用流程
+1. 新增全景（或拖放 JPG）  
+2. 編輯注解／場景連結／初始視角  
+3. 填 **SITE_CODE · ROOM_NAME · PHOTO_DATE**（匯出／部署必填）  
+4. **一鍵部署** 或 **匯出 ZIP**  
 
-1. 開啟 Editor  
-2. **新增全景圖片**（或拖放 JPG）  
-3. 編輯注解／場景連結／初始視角／測量  
-4. 填 **SITE_CODE · ROOM_NAME · PHOTO_DATE**  
-5. **一鍵部署** → 自動進入 `site/...`  
-6. 或 **匯出 ZIP** 備份／搬運／再「開啟專案套件」
+---
 
-## 專案結構（摘要）
+## 技術
 
-```text
-src/           Editor + Viewer 原始碼（TypeScript）
-server/        dev / preview + deploy API
-public/brand/  LOGO
-site/          本機部署輸出（gitignore）
-dist/          build 輸出
-viewer/        Viewer 入口（build 一併打包）
-```
+- TypeScript + Vite + three.js r172  
+- Express：`/api/deploy`（ZIP 解壓）、`/api/sites`、`/site` 靜態  
+- Vite `watch.ignored`：`site/**`（避免部署觸發整頁 reload）  
 
-## 套件格式
-
-- `format`: `telecom360-threejs-package`
-- `version`: `1`
-- 僅支援本格式 import（無 legacy adapter）
-
-## 授權與品牌
-
-Private / 內部使用。LOGO 與品牌資產屬公司所有。third-party：three.js（MIT）等。
+Private / 內部使用。LOGO 與品牌資產屬公司所有。

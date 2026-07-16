@@ -11,11 +11,6 @@ export interface ViewParams {
   fov: number;
 }
 
-export interface SphericalPoint {
-  yaw: number;
-  pitch: number;
-}
-
 export interface InfoHotspot {
   id: string;
   type: 'info';
@@ -37,14 +32,6 @@ export interface SceneHotspot {
 
 export type Hotspot = InfoHotspot | SceneHotspot;
 
-export interface Measurement {
-  id: string;
-  points: SphericalPoint[];
-  label: string;
-  /** meters per unit arc length after calibration; null = relative units */
-  scaleMetersPerUnit: number | null;
-}
-
 export interface SceneSource {
   kind: 'equirectangular';
   /** object URL or relative path inside package/site */
@@ -63,7 +50,6 @@ export interface Scene {
   source: SceneSource;
   initialView: ViewParams;
   hotspots: Hotspot[];
-  measurements: Measurement[];
 }
 
 export interface ProjectSettings {
@@ -72,6 +58,7 @@ export interface ProjectSettings {
   fullscreenButton: boolean;
   viewControlButtons: boolean;
   defaultParallaxEnabled: boolean;
+  /** camera offset limit when 3D move mode is on (world units) */
   parallaxRadius: number;
   sphereRadius: number;
   anisotropy: number;
@@ -101,10 +88,15 @@ export interface ProjectPackage {
   project: ProjectDocument;
 }
 
+/** Max zoom-out FOV (~100°). Larger FOV = more of the sphere visible. */
+export const FOV_MAX = (100 * Math.PI) / 180;
+export const FOV_MIN = (40 * Math.PI) / 180;
+
+/** Default view: fully zoomed out */
 export const DEFAULT_VIEW: ViewParams = {
   yaw: 0,
   pitch: 0,
-  fov: Math.PI / 2,
+  fov: FOV_MAX,
 };
 
 export function defaultSettings(): ProjectSettings {
@@ -114,11 +106,16 @@ export function defaultSettings(): ProjectSettings {
     fullscreenButton: true,
     viewControlButtons: true,
     defaultParallaxEnabled: false,
-    parallaxRadius: 10,
+    /** WASD move limit from sphere centre (larger = more walk range) */
+    parallaxRadius: 120,
     sphereRadius: 500,
     anisotropy: 16,
     locale: 'zh-Hant',
   };
+}
+
+export function deployFieldsComplete(d: { siteCode: string; roomName: string; photoDate: string }): boolean {
+  return Boolean(d.siteCode?.trim() && d.roomName?.trim() && d.photoDate?.trim());
 }
 
 export function emptyProject(name = '未命名專案'): ProjectDocument {

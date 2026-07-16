@@ -6,18 +6,21 @@ import { buildProjectZip, downloadBlob, suggestZipName } from '../project/Export
 import { importProjectZip } from '../project/ImportService';
 import { deployProject } from '../project/DeployService';
 import { uid } from '../utils/id';
-import { greatCircleAngle } from '../utils/math';
-import type { Hotspot, InfoHotspot, SceneHotspot } from '../core/types/project';
+import { deployFieldsComplete, type InfoHotspot, type SceneHotspot } from '../core/types/project';
+
+const ICON_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>`;
+const ICON_SCENE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`;
 
 export class EditorApp {
   private root: HTMLElement;
   private engine: PanoramaEngine | null = null;
   private stageEl: HTMLElement | null = null;
   private hotspotLayer: HTMLElement | null = null;
-  private measureLayer: SVGSVGElement | null = null;
   private draggingHotspotId: string | null = null;
   private unsub: (() => void) | null = null;
   private overlayRaf = 0;
+  private inspectorKey = '';
+  private lastActiveId: string | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -46,15 +49,15 @@ export class EditorApp {
           <div class="brand-text">Telecom360</div>
           <div class="spacer"></div>
           <div class="deploy-fields">
-            <label>${t('siteCode')}<input id="f-site" placeholder="FOS" /></label>
-            <label>${t('roomName')}<input id="f-room" placeholder="Main" /></label>
-            <label>${t('photoDate')}<input id="f-date" placeholder="20260423" /></label>
+            <label>${t('siteCode')} *<input id="f-site" placeholder="e.g. FOS" required /></label>
+            <label>${t('roomName')} *<input id="f-room" placeholder="e.g. Control_Room" required /></label>
+            <label>${t('photoDate')} *<input id="f-date" placeholder="e.g. 20260423" required /></label>
           </div>
-          <button class="btn" id="btn-import">${t('openPackage')}</button>
-          <button class="btn" id="btn-export">${t('exportZip')}</button>
-          <button class="btn primary" id="btn-deploy">${t('oneClickDeploy')}</button>
-          <input type="file" id="file-import" accept=".zip,application/zip" hidden />
-          <input type="file" id="file-scenes" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple hidden />
+          <button type="button" class="btn" id="btn-import">${t('openPackage')}</button>
+          <button type="button" class="btn" id="btn-export">${t('exportZip')}</button>
+          <button type="button" class="btn primary" id="btn-deploy">${t('oneClickDeploy')}</button>
+          <input type="file" id="file-import" class="sr-file" accept=".zip,application/zip" tabindex="-1" />
+          <input type="file" id="file-scenes" class="sr-file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple tabindex="-1" />
         </header>
         <div class="main">
           <aside class="sidebar">
@@ -62,24 +65,31 @@ export class EditorApp {
             <div class="project-name-row">
               <input id="project-name" />
             </div>
+            <div class="settings-row">
+              <label class="chk"><input type="checkbox" id="set-autorotate" /> 匯出後預設自動旋轉</label>
+              <label class="chk"><input type="checkbox" id="set-fullscreen" /> 顯示全螢幕按鈕</label>
+            </div>
             <h2>${t('scenes')}</h2>
             <ul class="scene-list" id="scene-list"></ul>
             <div class="add-files">
-              <button class="btn ghost-dark" id="btn-add-scenes" style="width:100%">${t('addScenes')}</button>
+              <button type="button" class="btn ghost-dark" id="btn-add-scenes" style="width:100%">${t('addScenes')}</button>
             </div>
             <p class="hint">${t('noScenes')}</p>
+            <p class="hint">拖曳 ⋮⋮ 可調整列表順序</p>
+            <h2>已部署</h2>
+            <ul class="deployed-list" id="deployed-list"></ul>
+            <button type="button" class="btn ghost-dark" id="btn-refresh-sites" style="width:100%;margin-top:6px">重新整理列表</button>
           </aside>
           <section class="stage-wrap">
             <div class="stage-toolbar">
-              <button class="btn" id="btn-info">${t('addInfo')}</button>
-              <button class="btn" id="btn-scene-hs">${t('addSceneLink')}</button>
-              <button class="btn" id="btn-initial">${t('setInitialView')}</button>
-              <button class="btn" id="btn-measure">${t('measure')}</button>
-              <button class="btn" id="btn-parallax">${t('parallaxOff')}</button>
+              <button type="button" class="btn" id="btn-info">${t('addInfo')}</button>
+              <button type="button" class="btn" id="btn-scene-hs">${t('addSceneLink')}</button>
+              <button type="button" class="btn" id="btn-initial">${t('setInitialView')}</button>
+              <button type="button" class="btn" id="btn-parallax">${t('parallaxOff')}</button>
             </div>
             <div id="stage">
+              <div class="stage-empty" id="stage-empty">${t('noScenes')}</div>
               <div class="hotspot-layer" id="hotspot-layer"></div>
-              <div class="measure-layer"><svg id="measure-layer"></svg></div>
             </div>
             <div class="stage-footer" id="stage-footer">${t('controlsHint')}</div>
           </section>
@@ -89,29 +99,82 @@ export class EditorApp {
           </aside>
         </div>
         <div class="toast" id="toast" hidden></div>
-        <div class="busy" id="busy" hidden><div id="busy-text"></div></div>
+        <!-- One overlay for loading % AND success message (no window.alert / confirm) -->
+        <div class="busy" id="busy" hidden>
+          <div class="busy-card">
+            <div id="busy-mode-progress">
+              <div id="busy-text" class="busy-text"></div>
+              <div class="busy-bar-track"><div id="busy-bar" class="busy-bar"></div></div>
+              <div id="busy-pct" class="busy-pct">0%</div>
+            </div>
+            <div id="busy-mode-result" class="busy-result" hidden>
+              <div id="busy-result-title" class="msg-modal-title"></div>
+              <div id="busy-result-body" class="msg-modal-body"></div>
+              <div id="busy-result-link" class="msg-modal-link" tabindex="0"></div>
+              <button type="button" class="btn primary msg-modal-ok" id="busy-result-ok">確定</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
     this.stageEl = this.root.querySelector('#stage');
     this.hotspotLayer = this.root.querySelector('#hotspot-layer');
-    this.measureLayer = this.root.querySelector('#measure-layer');
 
-    this.root.querySelector('#btn-add-scenes')!.addEventListener('click', () => {
-      (this.root.querySelector('#file-scenes') as HTMLInputElement).click();
+    this.root.querySelector('#busy-result-ok')!.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      store.clearResultDialog();
     });
+
+    this.root.addEventListener('click', (ev) => {
+      const tEl = (ev.target as HTMLElement).closest('button') as HTMLElement | null;
+      if (!tEl || !this.root.contains(tEl)) return;
+      const id = tEl.id;
+      if (id === 'busy-result-ok') return;
+      if (id === 'btn-add-scenes') {
+        ev.preventDefault();
+        this.openFilePicker('#file-scenes');
+        return;
+      }
+      if (id === 'btn-import') {
+        ev.preventDefault();
+        this.openFilePicker('#file-import');
+        return;
+      }
+      if (id === 'btn-export') {
+        ev.preventDefault();
+        void this.onExport();
+        return;
+      }
+      if (id === 'btn-deploy') {
+        ev.preventDefault();
+        void this.onDeploy();
+        return;
+      }
+      if (id === 'btn-info') {
+        ev.preventDefault();
+        this.addInfoHotspot();
+        return;
+      }
+      if (id === 'btn-scene-hs') {
+        ev.preventDefault();
+        this.addSceneHotspot();
+        return;
+      }
+      if (id === 'btn-initial') {
+        ev.preventDefault();
+        this.setInitialView();
+        return;
+      }
+      if (id === 'btn-parallax') {
+        ev.preventDefault();
+        this.toggleParallax();
+      }
+    });
+
     this.root.querySelector('#file-scenes')!.addEventListener('change', (e) => this.onAddFiles(e));
-    this.root.querySelector('#btn-import')!.addEventListener('click', () => {
-      (this.root.querySelector('#file-import') as HTMLInputElement).click();
-    });
     this.root.querySelector('#file-import')!.addEventListener('change', (e) => this.onImport(e));
-    this.root.querySelector('#btn-export')!.addEventListener('click', () => this.onExport());
-    this.root.querySelector('#btn-deploy')!.addEventListener('click', () => this.onDeploy());
-    this.root.querySelector('#btn-info')!.addEventListener('click', () => this.addInfoHotspot());
-    this.root.querySelector('#btn-scene-hs')!.addEventListener('click', () => this.addSceneHotspot());
-    this.root.querySelector('#btn-initial')!.addEventListener('click', () => this.setInitialView());
-    this.root.querySelector('#btn-measure')!.addEventListener('click', () => this.toggleMeasure());
-    this.root.querySelector('#btn-parallax')!.addEventListener('click', () => this.toggleParallax());
 
     const site = this.root.querySelector('#f-site') as HTMLInputElement;
     const room = this.root.querySelector('#f-room') as HTMLInputElement;
@@ -121,41 +184,92 @@ export class EditorApp {
     room.addEventListener('input', () => store.setDeploy({ roomName: room.value }));
     date.addEventListener('input', () => store.setDeploy({ photoDate: date.value }));
     pname.addEventListener('input', () => store.setProjectName(pname.value));
+    (this.root.querySelector('#set-autorotate') as HTMLInputElement).addEventListener('change', (e) => {
+      store.patchSettings({ autorotateEnabled: (e.target as HTMLInputElement).checked });
+    });
+    (this.root.querySelector('#set-fullscreen') as HTMLInputElement).addEventListener('change', (e) => {
+      store.patchSettings({ fullscreenButton: (e.target as HTMLInputElement).checked });
+    });
+    this.root.querySelector('#btn-refresh-sites')!.addEventListener('click', () => void this.refreshDeployedList());
+    void this.refreshDeployedList();
+  }
+
+  private async refreshDeployedList() {
+    const ul = this.root.querySelector('#deployed-list');
+    if (!ul) return;
+    try {
+      const res = await fetch('/api/sites');
+      const data = (await res.json()) as {
+        ok?: boolean;
+        sites?: { siteCode: string; roomName: string; photoDate: string; url: string }[];
+      };
+      const sites = data.sites || [];
+      if (!sites.length) {
+        ul.innerHTML = `<li class="hint">尚未有部署</li>`;
+        return;
+      }
+      ul.innerHTML = sites
+        .map((s) => {
+          const abs = new URL(s.url, location.origin).href;
+          return `<li class="deployed-item"><a href="${escapeAttr(abs)}" target="_blank" rel="noopener">${escapeHtml(s.siteCode)} / ${escapeHtml(s.roomName)} / ${escapeHtml(s.photoDate)}</a></li>`;
+        })
+        .join('');
+    } catch {
+      ul.innerHTML = `<li class="hint">無法載入列表</li>`;
+    }
   }
 
   private bindGlobal() {
+    // Suppress leave warning while deploy/export busy or result overlay open
+    // (native beforeunload dialog looks like a "browser message box" and confuses users)
     window.addEventListener('beforeunload', (e) => {
-      if (store.project.scenes.length) {
-        e.preventDefault();
-        e.returnValue = t('leaveWarn');
-      }
+      if (store.ui.busyMessage) return;
+      const busy = this.root.querySelector('#busy');
+      if (busy && !busy.hasAttribute('hidden')) return;
+      if (!store.project.scenes.length) return;
+      e.preventDefault();
+      e.returnValue = t('leaveWarn');
     });
     window.addEventListener('dragover', (e) => e.preventDefault());
     window.addEventListener('drop', async (e) => {
       e.preventDefault();
-      const files = [...(e.dataTransfer?.files || [])].filter((f) => /image\/(jpeg|png)/.test(f.type) || /\.jpe?g$/i.test(f.name));
+      const files = [...(e.dataTransfer?.files || [])].filter(
+        (f) => /image\/(jpeg|png)/.test(f.type) || /\.jpe?g$/i.test(f.name)
+      );
       if (files.length) await this.ingestFiles(files);
     });
     window.addEventListener('pointermove', (e) => {
       if (!this.draggingHotspotId || !this.engine) return;
       const hit = this.engine.pickSpherical(e.clientX, e.clientY);
-      if (hit) store.updateHotspot(this.draggingHotspotId, { yaw: hit.yaw, pitch: hit.pitch });
+      if (hit) store.updateHotspot(this.draggingHotspotId, { yaw: hit.yaw, pitch: hit.pitch }, { silent: true });
     });
     window.addEventListener('pointerup', () => {
       this.draggingHotspotId = null;
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (store.ui.resultDialog) {
+          e.preventDefault();
+          store.clearResultDialog();
+        }
+      }
     });
   }
 
   private ensureEngine() {
     if (!this.stageEl || this.engine) return;
-    this.engine = new PanoramaEngine(this.stageEl, store.project.settings);
-    this.engine.setCallbacks({
-      onClickSphere: (yaw, pitch) => this.onSphereClick(yaw, pitch),
-    });
-    // keep hotspot layer on top of canvas
-    if (this.hotspotLayer) this.stageEl.appendChild(this.hotspotLayer);
-    const ml = this.stageEl.querySelector('.measure-layer');
-    if (ml) this.stageEl.appendChild(ml);
+    try {
+      this.engine = new PanoramaEngine(this.stageEl, store.project.settings);
+      this.engine.setCallbacks({
+        onClickSphere: () => {
+          /* navigate / edit via hotspots only */
+        },
+      });
+      if (this.hotspotLayer) this.stageEl.appendChild(this.hotspotLayer);
+    } catch (err) {
+      console.error(err);
+      store.setToast(`${t('webglError')}: ${(err as Error).message || err}`);
+    }
   }
 
   private async loadActiveScene(transition: boolean) {
@@ -176,60 +290,85 @@ export class EditorApp {
     }
   }
 
-  private lastActiveId: string | null = null;
-
   private syncUi() {
     const p = store.project;
     const ui = store.ui;
-    (this.root.querySelector('#project-name') as HTMLInputElement).value = p.name;
-    (this.root.querySelector('#f-site') as HTMLInputElement).value = p.deploy.siteCode;
-    (this.root.querySelector('#f-room') as HTMLInputElement).value = p.deploy.roomName;
-    (this.root.querySelector('#f-date') as HTMLInputElement).value = p.deploy.photoDate;
+    const setIfBlurred = (sel: string, val: string) => {
+      const el = this.root.querySelector(sel) as HTMLInputElement;
+      if (document.activeElement !== el) el.value = val;
+    };
+    setIfBlurred('#project-name', p.name);
+    setIfBlurred('#f-site', p.deploy.siteCode);
+    setIfBlurred('#f-room', p.deploy.roomName);
+    setIfBlurred('#f-date', p.deploy.photoDate);
+    const ar = this.root.querySelector('#set-autorotate') as HTMLInputElement;
+    const fs = this.root.querySelector('#set-fullscreen') as HTMLInputElement;
+    if (document.activeElement !== ar) ar.checked = !!p.settings.autorotateEnabled;
+    if (document.activeElement !== fs) fs.checked = p.settings.fullscreenButton !== false;
+
+    const empty = this.root.querySelector('#stage-empty') as HTMLElement | null;
+    if (empty) empty.hidden = p.scenes.length > 0;
 
     const list = this.root.querySelector('#scene-list')!;
     list.innerHTML = p.scenes
       .map(
         (s) => `
-      <li class="scene-item ${s.id === ui.activeSceneId ? 'active' : ''}" data-id="${s.id}">
-        <div>
-          <div class="name">${escapeHtml(s.name)}</div>
+      <li class="scene-item ${s.id === ui.activeSceneId ? 'active' : ''}" data-id="${s.id}" draggable="true">
+        <div class="scene-drag" title="拖曳排序">⋮⋮</div>
+        <div class="scene-body">
+          <div class="name" title="${escapeAttr(s.name)}">${escapeHtml(s.name)}</div>
           <div class="meta">${s.source.width || '?'}×${s.source.height || '?'} · ${s.hotspots.length} 標註</div>
         </div>
         <div class="row-actions">
-          <button data-act="rename" data-id="${s.id}">${t('rename')}</button>
-          <button data-act="del" data-id="${s.id}">${t('delete')}</button>
+          <button type="button" data-act="rename" data-id="${s.id}" title="${t('rename')}">${t('rename')}</button>
+          <button type="button" data-act="del" data-id="${s.id}" title="${t('delete')}">${t('delete')}</button>
         </div>
       </li>`
       )
       .join('');
 
     list.querySelectorAll('.scene-item').forEach((el) => {
+      const id = (el as HTMLElement).dataset.id!;
       el.addEventListener('click', (ev) => {
         const target = ev.target as HTMLElement;
-        const id = (el as HTMLElement).dataset.id!;
-        if (target.dataset.act === 'del') {
+        const act = target.dataset.act || (target.closest('[data-act]') as HTMLElement | null)?.dataset.act;
+        if (act === 'del') {
           ev.stopPropagation();
           if (confirm(t('confirmDeleteScene'))) store.removeScene(id);
           return;
         }
-        if (target.dataset.act === 'rename') {
+        if (act === 'rename') {
           ev.stopPropagation();
           const name = prompt(t('rename'), store.project.scenes.find((s) => s.id === id)?.name || '');
           if (name) store.renameScene(id, name);
           return;
         }
-        if (id !== store.ui.activeSceneId) {
-          store.selectScene(id);
-        }
+        if (id !== store.ui.activeSceneId) store.selectScene(id);
+      });
+      el.addEventListener('dragstart', (ev) => {
+        (ev as DragEvent).dataTransfer?.setData('text/plain', id);
+        (el as HTMLElement).classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => (el as HTMLElement).classList.remove('dragging'));
+      el.addEventListener('dragover', (ev) => {
+        ev.preventDefault();
+        (el as HTMLElement).classList.add('drag-over');
+      });
+      el.addEventListener('dragleave', () => (el as HTMLElement).classList.remove('drag-over'));
+      el.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        (el as HTMLElement).classList.remove('drag-over');
+        const fromId = (ev as DragEvent).dataTransfer?.getData('text/plain');
+        if (!fromId || fromId === id) return;
+        const from = store.project.scenes.findIndex((s) => s.id === fromId);
+        const to = store.project.scenes.findIndex((s) => s.id === id);
+        store.moveScene(from, to);
       });
     });
 
     const paraBtn = this.root.querySelector('#btn-parallax') as HTMLButtonElement;
     paraBtn.textContent = ui.parallaxEnabled ? t('parallaxOn') : t('parallaxOff');
     paraBtn.classList.toggle('active', ui.parallaxEnabled);
-
-    const measureBtn = this.root.querySelector('#btn-measure') as HTMLButtonElement;
-    measureBtn.classList.toggle('active', ui.mode === 'measure');
 
     const toast = this.root.querySelector('#toast') as HTMLElement;
     if (ui.toast) {
@@ -238,10 +377,54 @@ export class EditorApp {
     } else toast.hidden = true;
 
     const busy = this.root.querySelector('#busy') as HTMLElement;
+    const bar = this.root.querySelector('#busy-bar') as HTMLElement;
+    const pctEl = this.root.querySelector('#busy-pct') as HTMLElement;
+    const modeProgress = this.root.querySelector('#busy-mode-progress') as HTMLElement | null;
+    const modeResult = this.root.querySelector('#busy-mode-result') as HTMLElement | null;
+    const result = ui.resultDialog;
+
     if (ui.busyMessage) {
+      // Progress mode
       busy.hidden = false;
-      (this.root.querySelector('#busy-text') as HTMLElement).textContent = ui.busyMessage;
-    } else busy.hidden = true;
+      busy.classList.add('is-on');
+      if (modeProgress) modeProgress.hidden = false;
+      if (modeResult) modeResult.hidden = true;
+      const pct = ui.busyPercent ?? 0;
+      const label =
+        ui.busyPercent != null ? `${ui.busyMessage} · ${pct}%` : ui.busyMessage;
+      (this.root.querySelector('#busy-text') as HTMLElement).textContent = label;
+      bar.style.width = `${pct}%`;
+      pctEl.textContent = ui.busyPercent != null ? `${pct}%` : '';
+      pctEl.hidden = ui.busyPercent == null;
+    } else if (result) {
+      // Success message mode — same overlay as loading
+      busy.hidden = false;
+      busy.classList.add('is-on');
+      if (modeProgress) modeProgress.hidden = true;
+      if (modeResult) modeResult.hidden = false;
+      const titleEl = this.root.querySelector('#busy-result-title') as HTMLElement;
+      const bodyEl = this.root.querySelector('#busy-result-body') as HTMLElement;
+      const linkEl = this.root.querySelector('#busy-result-link') as HTMLElement;
+      if (titleEl) titleEl.textContent = result.title;
+      if (bodyEl) bodyEl.textContent = result.body;
+      if (linkEl) {
+        linkEl.textContent = result.link;
+        linkEl.onclick = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          void navigator.clipboard?.writeText(result.link).then(
+            () => store.setToast('已複製連結'),
+            () => store.setToast(result.link)
+          );
+        };
+      }
+    } else {
+      busy.hidden = true;
+      busy.classList.remove('is-on');
+      bar.style.width = '0%';
+      if (modeProgress) modeProgress.hidden = false;
+      if (modeResult) modeResult.hidden = true;
+    }
 
     this.renderInspector();
     this.engine?.setParallaxEnabled(ui.parallaxEnabled);
@@ -249,83 +432,88 @@ export class EditorApp {
     if (ui.activeSceneId !== this.lastActiveId) {
       const useTransition = this.lastActiveId != null && ui.activeSceneId != null;
       this.lastActiveId = ui.activeSceneId;
-      void this.loadActiveScene(useTransition);
+      if (!ui.activeSceneId) {
+        this.engine?.clearTexture();
+        if (this.hotspotLayer) this.hotspotLayer.innerHTML = '';
+      } else {
+        void this.loadActiveScene(useTransition);
+      }
     }
   }
 
   private renderInspector() {
-    const body = this.root.querySelector('#inspector-body')!;
+    const body = this.root.querySelector('#inspector-body') as HTMLElement;
     const scene = store.activeScene;
     const hs = scene?.hotspots.find((h) => h.id === store.ui.selectedHotspotId);
+    const key = `${store.ui.activeSceneId}|${store.ui.selectedHotspotId}`;
+    if (key === this.inspectorKey && body.childElementCount > 0) return;
+    this.inspectorKey = key;
+
     if (!scene) {
       body.innerHTML = `<p class="hint">${t('noScenes')}</p>`;
+      this.engine?.clearTexture();
       return;
     }
     if (!hs) {
-      const measures = scene.measurements
-        .map((m) => {
-          const ang = m.points.length >= 2 ? greatCircleAngle(m.points[0], m.points[1]) : 0;
-          const label =
-            m.scaleMetersPerUnit != null
-              ? `${(ang * m.scaleMetersPerUnit).toFixed(2)} ${t('meters')}`
-              : `${ang.toFixed(3)} ${t('relativeUnit')}`;
-          return `<li><span>${escapeHtml(m.label)} · ${label}</span><button data-mid="${m.id}">${t('delete')}</button></li>`;
-        })
-        .join('');
-      body.innerHTML = `
-        <p class="hint">${t('noSelection')}</p>
-        <h2 style="margin-top:16px">${t('measure')}</h2>
-        <ul class="measure-list">${measures || `<li class="hint">${t('measurementHint')}</li>`}</ul>
-      `;
-      body.querySelectorAll('button[data-mid]').forEach((b) => {
-        b.addEventListener('click', () => store.removeMeasurement((b as HTMLElement).dataset.mid!));
-      });
+      body.innerHTML = `<p class="hint">${t('noSelection')}</p>`;
       return;
     }
 
     if (hs.type === 'info') {
       body.innerHTML = `
+        <p class="hint">注解標示 · 可在預覽拖曳位置</p>
         <label>${t('title')}<input id="hs-title" value="${escapeAttr(hs.title)}" /></label>
         <label>${t('text')}<textarea id="hs-text">${escapeHtml(hs.text)}</textarea></label>
-        <div style="margin-top:12px;display:flex;gap:8px">
-          <button class="btn ghost-dark" id="hs-del">${t('delete')}</button>
+        <div style="margin-top:12px">
+          <button type="button" class="btn ghost-dark" id="hs-del">${t('delete')}</button>
         </div>
       `;
       body.querySelector('#hs-title')!.addEventListener('input', (e) => {
-        store.updateHotspot(hs.id, { title: (e.target as HTMLInputElement).value });
+        store.updateHotspot(hs.id, { title: (e.target as HTMLInputElement).value }, { silent: true });
       });
       body.querySelector('#hs-text')!.addEventListener('input', (e) => {
-        store.updateHotspot(hs.id, { text: (e.target as HTMLTextAreaElement).value });
+        store.updateHotspot(hs.id, { text: (e.target as HTMLTextAreaElement).value }, { silent: true });
       });
     } else {
       const options = store.project.scenes
         .filter((s) => s.id !== scene.id)
-        .map((s) => `<option value="${s.id}" ${s.id === hs.targetSceneId ? 'selected' : ''}>${escapeHtml(s.name)}</option>`)
+        .map(
+          (s) =>
+            `<option value="${s.id}" ${s.id === hs.targetSceneId ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
+        )
         .join('');
       body.innerHTML = `
+        <p class="hint">場景連結 · 點圖示只選取；用下方按鈕前往</p>
         <label>${t('selectTarget')}
           <select id="hs-target">
             <option value="">${t('emptyTarget')}</option>
             ${options}
           </select>
         </label>
-        <div style="margin-top:12px;display:flex;gap:8px">
-          <button class="btn ghost-dark" id="hs-del">${t('delete')}</button>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn primary" id="hs-go">${t('goToScene')}</button>
+          <button type="button" class="btn ghost-dark" id="hs-del">${t('delete')}</button>
         </div>
       `;
       body.querySelector('#hs-target')!.addEventListener('change', (e) => {
         store.updateHotspot(hs.id, { targetSceneId: (e.target as HTMLSelectElement).value });
+        this.inspectorKey = '';
+      });
+      body.querySelector('#hs-go')!.addEventListener('click', () => {
+        void this.goToScene(hs as SceneHotspot);
       });
     }
     body.querySelector('#hs-del')!.addEventListener('click', () => {
-      if (confirm(t('confirmDeleteHotspot'))) store.removeHotspot(hs.id);
+      if (confirm(t('confirmDeleteHotspot'))) {
+        store.removeHotspot(hs.id);
+        this.inspectorKey = '';
+      }
     });
   }
 
   private loopOverlays = () => {
     this.overlayRaf = requestAnimationFrame(this.loopOverlays);
     this.drawHotspots();
-    this.drawMeasures();
   };
 
   private drawHotspots() {
@@ -336,7 +524,10 @@ export class EditorApp {
       return;
     }
     const existing = new Map(
-      [...this.hotspotLayer.querySelectorAll('.hotspot-pin')].map((el) => [(el as HTMLElement).dataset.id!, el as HTMLElement])
+      [...this.hotspotLayer.querySelectorAll('.hotspot-pin')].map((el) => [
+        (el as HTMLElement).dataset.id!,
+        el as HTMLElement,
+      ])
     );
     const keep = new Set<string>();
     for (const h of scene.hotspots) {
@@ -346,39 +537,36 @@ export class EditorApp {
         el = document.createElement('div');
         el.className = `hotspot-pin ${h.type}`;
         el.dataset.id = h.id;
-        el.innerHTML = `<div class="glyph"></div>`;
+        el.innerHTML = `<div class="glyph">${h.type === 'info' ? ICON_INFO : ICON_SCENE}</div><div class="pin-label"></div>`;
         el.addEventListener('pointerdown', (ev) => {
           ev.stopPropagation();
           this.draggingHotspotId = h.id;
+          this.inspectorKey = '';
           store.selectHotspot(h.id);
-          (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId);
+          (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
         });
         el.addEventListener('pointerup', (ev) => {
           ev.stopPropagation();
-          if (this.draggingHotspotId === h.id && h.type === 'scene' && !store.ui.selectedHotspotId) {
-            /* ignore */
-          }
-          // double purpose: click scene hotspot to navigate when not measuring
-          if (h.type === 'scene' && store.ui.mode === 'navigate' && this.draggingHotspotId === h.id) {
-            const moved = false;
-            if (!moved && h.targetSceneId) {
-              // small delay distinction: if pointer barely moved — navigate
-            }
-          }
           this.draggingHotspotId = null;
         });
         el.addEventListener('click', (ev) => {
           ev.stopPropagation();
+          this.inspectorKey = '';
           store.selectHotspot(h.id);
-          if (h.type === 'scene' && h.targetSceneId && store.ui.mode === 'navigate') {
-            void this.goToScene(h as SceneHotspot);
-          }
         });
         this.hotspotLayer.appendChild(el);
       }
       el.classList.toggle('selected', store.ui.selectedHotspotId === h.id);
       el.classList.toggle('info', h.type === 'info');
       el.classList.toggle('scene', h.type === 'scene');
+      const labelEl = el.querySelector('.pin-label') as HTMLElement | null;
+      if (labelEl) {
+        if (h.type === 'info') labelEl.textContent = h.title || '注解';
+        else {
+          const tgt = store.project.scenes.find((s) => s.id === h.targetSceneId);
+          labelEl.textContent = tgt ? `→ ${tgt.name}` : '場景';
+        }
+      }
       const scr = this.engine.projectToScreen(h.yaw, h.pitch);
       el.style.left = `${scr.x}px`;
       el.style.top = `${scr.y}px`;
@@ -387,72 +575,49 @@ export class EditorApp {
     for (const [id, el] of existing) {
       if (!keep.has(id)) el.remove();
     }
-
-    if (this.draggingHotspotId && this.engine) {
-      // position updated on pointer move via window
-    }
-  }
-
-  private drawMeasures() {
-    if (!this.engine || !this.measureLayer) return;
-    const scene = store.activeScene;
-    const parts: string[] = [];
-    if (scene) {
-      for (const m of scene.measurements) {
-        if (m.points.length < 2) continue;
-        const a = this.engine.projectToScreen(m.points[0].yaw, m.points[0].pitch);
-        const b = this.engine.projectToScreen(m.points[1].yaw, m.points[1].pitch);
-        if (!a.visible && !b.visible) continue;
-        const ang = greatCircleAngle(m.points[0], m.points[1]);
-        const label =
-          m.scaleMetersPerUnit != null
-            ? `${(ang * m.scaleMetersPerUnit).toFixed(2)} m`
-            : `${ang.toFixed(3)}`;
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        parts.push(
-          `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#00a1e0" stroke-width="2" />`,
-          `<circle cx="${a.x}" cy="${a.y}" r="4" fill="#fff" />`,
-          `<circle cx="${b.x}" cy="${b.y}" r="4" fill="#fff" />`,
-          `<text x="${mx}" y="${my - 8}" fill="#fff" font-size="12" text-anchor="middle">${escapeHtml(label)}</text>`
-        );
-      }
-      if (store.ui.measureDraft) {
-        const d = this.engine.projectToScreen(store.ui.measureDraft.yaw, store.ui.measureDraft.pitch);
-        parts.push(`<circle cx="${d.x}" cy="${d.y}" r="5" fill="#f59e0b" />`);
-      }
-    }
-    this.measureLayer.innerHTML = parts.join('');
-  }
-
-  private onSphereClick(yaw: number, pitch: number) {
-    if (this.draggingHotspotId) {
-      store.updateHotspot(this.draggingHotspotId, { yaw, pitch });
-      return;
-    }
-    if (store.ui.mode === 'measure') {
-      if (!store.ui.measureDraft) {
-        store.setMeasureDraft({ yaw, pitch });
-      } else {
-        store.addMeasurement({
-          id: uid('msr'),
-          points: [store.ui.measureDraft, { yaw, pitch }],
-          label: '距離',
-          scaleMetersPerUnit: null,
-        });
-        store.setMeasureDraft(null);
-      }
-    }
   }
 
   private async goToScene(h: SceneHotspot) {
     if (!h.targetSceneId || !this.engine) return;
-    await this.engine.aimAndPush(h.yaw, h.pitch, 350);
+    await this.engine.aimAndZoomIn(h.yaw, h.pitch, 380);
+    const canvas = this.engine.renderer.domElement;
+    canvas.style.transition = 'opacity 0.35s ease';
+    canvas.style.opacity = '0';
+    await new Promise((r) => setTimeout(r, 350));
     store.selectScene(h.targetSceneId);
+    await new Promise((r) => setTimeout(r, 80));
+    canvas.style.opacity = '1';
+  }
+
+  private openFilePicker(selector: string) {
+    const input = this.root.querySelector(selector) as HTMLInputElement | null;
+    if (!input) {
+      store.setToast('找不到檔案選擇器');
+      return;
+    }
+    const anyInput = input as HTMLInputElement & { showPicker?: () => void };
+    try {
+      if (typeof anyInput.showPicker === 'function') anyInput.showPicker();
+      else input.click();
+    } catch {
+      input.click();
+    }
+  }
+
+  private requireActiveScene(): boolean {
+    if (!this.engine) {
+      store.setToast(t('webglError'));
+      return false;
+    }
+    if (!store.activeScene) {
+      store.setToast('請先「新增全景圖片」');
+      return false;
+    }
+    return true;
   }
 
   private addInfoHotspot() {
-    if (!this.engine || !store.activeScene) return;
+    if (!this.requireActiveScene() || !this.engine) return;
     const v = this.engine.getView();
     const hs: InfoHotspot = {
       id: uid('hs'),
@@ -463,33 +628,42 @@ export class EditorApp {
       text: '內容',
     };
     store.addHotspot(hs);
+    store.setToast('已新增注解標示（可拖曳位置）');
   }
 
   private addSceneHotspot() {
-    if (!this.engine || !store.activeScene) return;
+    if (!this.requireActiveScene() || !this.engine) return;
     const v = this.engine.getView();
     const other = store.project.scenes.find((s) => s.id !== store.ui.activeSceneId);
+    if (!other) {
+      store.setToast('需要至少兩個全景才能建立場景連結');
+      return;
+    }
     const hs: SceneHotspot = {
       id: uid('hs'),
       type: 'scene',
       yaw: v.yaw,
       pitch: v.pitch,
-      targetSceneId: other?.id || '',
+      targetSceneId: other.id,
       rotation: 0,
       transition: 'fly',
     };
     store.addHotspot(hs);
+    store.setToast('已新增場景連結（右側可改目標／前往）');
   }
 
   private setInitialView() {
-    if (!this.engine) return;
+    if (!this.requireActiveScene() || !this.engine) return;
     store.updateActiveInitialView(this.engine.getView());
     store.setToast(t('initialViewSet'));
   }
 
-  private toggleMeasure() {
-    store.setMode(store.ui.mode === 'measure' ? 'navigate' : 'measure');
-    if (store.ui.mode === 'measure') store.setToast(t('measurementHint'));
+  private requireDeployFields(): boolean {
+    if (!deployFieldsComplete(store.project.deploy)) {
+      store.setToast(t('deployNeedFields'));
+      return false;
+    }
+    return true;
   }
 
   private toggleParallax() {
@@ -525,9 +699,13 @@ export class EditorApp {
       store.setToast(t('deployNeedScenes'));
       return;
     }
-    store.setBusy(t('exporting'));
+    if (!this.requireDeployFields()) return;
+    store.setBusy(t('exporting'), 0);
     try {
-      const blob = await buildProjectZip(store.project);
+      const blob = await buildProjectZip(store.project, (p, label) => {
+        store.setBusy(label ? `${t('exporting')}（${label}）` : t('exporting'), p);
+      });
+      store.setBusy(t('exporting'), 100);
       downloadBlob(blob, suggestZipName(store.project));
       store.setToast(t('exportDone'));
     } catch (err) {
@@ -543,11 +721,14 @@ export class EditorApp {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    store.setBusy(t('importing'));
+    store.setBusy(t('importing'), 0);
     try {
-      const doc = await importProjectZip(file);
+      const doc = await importProjectZip(file, (p, label) => {
+        store.setBusy(label ? `${t('importing')}（${label}）` : t('importing'), p);
+      });
       store.setProject(doc);
       this.lastActiveId = null;
+      store.setBusy(t('importing'), 100);
       store.setToast(t('importDone'));
     } catch (err) {
       console.error(err);
@@ -558,24 +739,37 @@ export class EditorApp {
   }
 
   private async onDeploy() {
-    store.setBusy(t('deploying'));
+    if (!store.project.scenes.length) {
+      store.setToast(t('deployNeedScenes'));
+      return;
+    }
+    if (!this.requireDeployFields()) return;
+    store.setBusy(t('deploying'), 0);
     try {
-      const res = await deployProject(store.project);
+      const res = await deployProject(store.project, (p, label) => {
+        store.setBusy(label ? `${t('deploying')}（${label}）` : t('deploying'), p);
+      });
       if (!res.ok) {
+        store.setBusy(null);
         if (res.error === 'missing_fields') store.setToast(t('deployNeedFields'));
         else if (res.error === 'no_scenes') store.setToast(t('deployNeedScenes'));
+        else if (res.error === 'file_too_large')
+          store.setToast(`${t('deployFail')}: 檔案過大（請減少圖片數或重啟伺服器）`);
         else store.setToast(`${t('deployFail')}: ${res.error || ''}`);
         return;
       }
-      store.setToast(`${t('deployDone')} ${res.url}`);
-      if (res.url && confirm(`${t('deployDone')}\n${res.url}\n\n${t('openDeployed')}?`)) {
-        window.open(res.url, '_blank');
-      }
+      const fullUrl = toAbsoluteUrl(res.url || '');
+      // Store-driven success UI on same overlay — project scenes stay in memory
+      store.showResultDialog({
+        title: t('deployDone'),
+        body: '部署成功。完整連結如下（點擊可複製到剪貼簿）：',
+        link: fullUrl,
+      });
+      void this.refreshDeployedList();
     } catch (err) {
       console.error(err);
-      store.setToast(`${t('deployFail')}: ${(err as Error).message}`);
-    } finally {
       store.setBusy(null);
+      store.setToast(`${t('deployFail')}: ${(err as Error).message}`);
     }
   }
 }
@@ -586,4 +780,15 @@ function escapeHtml(s: string): string {
 
 function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/`/g, '&#96;');
+}
+
+/** Ensure deploy result is a full http(s) link for the popup. */
+function toAbsoluteUrl(url: string): string {
+  if (!url) return location.origin + '/';
+  if (/^https?:\/\//i.test(url)) return url;
+  try {
+    return new URL(url, location.origin).href;
+  } catch {
+    return `${location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+  }
 }

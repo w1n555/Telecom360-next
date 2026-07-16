@@ -1,8 +1,8 @@
 import {
   type DeployMeta,
   type Hotspot,
-  type Measurement,
   type ProjectDocument,
+  type ProjectSettings,
   type Scene,
   type ViewParams,
   emptyProject,
@@ -10,17 +10,25 @@ import {
 
 type Listener = () => void;
 
-export type AppMode = 'navigate' | 'measure';
+export type AppMode = 'navigate';
+
+export interface ResultDialog {
+  title: string;
+  body: string;
+  link: string;
+}
 
 export interface UiState {
   mode: AppMode;
   activeSceneId: string | null;
   selectedHotspotId: string | null;
-  selectedMeasureId: string | null;
   parallaxEnabled: boolean;
   busyMessage: string | null;
+  /** 0–100 while busy; null when not showing percent */
+  busyPercent: number | null;
+  /** Success/info panel on the same overlay as loading (no native dialogs) */
+  resultDialog: ResultDialog | null;
   toast: string | null;
-  measureDraft: { yaw: number; pitch: number } | null;
 }
 
 export class ProjectStore {
@@ -29,11 +37,11 @@ export class ProjectStore {
     mode: 'navigate',
     activeSceneId: null,
     selectedHotspotId: null,
-    selectedMeasureId: null,
     parallaxEnabled: false,
     busyMessage: null,
+    busyPercent: null,
+    resultDialog: null,
     toast: null,
-    measureDraft: null,
   };
 
   private listeners = new Set<Listener>();
@@ -53,10 +61,20 @@ export class ProjectStore {
   }
 
   setProject(doc: ProjectDocument) {
-    this.project = doc;
+    this.project = {
+      ...doc,
+      scenes: doc.scenes.map((s) => ({
+        ...s,
+        // drop legacy measurements field if present
+        hotspots: s.hotspots.map((h) => ({ ...h })),
+      })),
+    };
+    // ensure no measurements key left on scenes
+    for (const s of this.project.scenes) {
+      delete (s as { measurements?: unknown }).measurements;
+    }
     this.ui.activeSceneId = doc.scenes[0]?.id ?? null;
     this.ui.selectedHotspotId = null;
-    this.ui.selectedMeasureId = null;
     this.ui.parallaxEnabled = doc.settings.defaultParallaxEnabled;
     this.emit();
   }
@@ -75,8 +93,36 @@ export class ProjectStore {
     this.touch();
   }
 
-  setBusy(msg: string | null) {
+  patchSettings(partial: Partial<ProjectSettings>) {
+    this.project.settings = { ...this.project.settings, ...partial };
+    this.touch();
+  }
+
+  setBusy(msg: string | null, percent: number | null = null) {
     this.ui.busyMessage = msg;
+    this.ui.busyPercent = msg == null ? null : percent;
+    // starting a busy op clears any previous result dialog
+    if (msg != null) this.ui.resultDialog = null;
+    this.emit();
+  }
+
+  setBusyPercent(percent: number) {
+    this.ui.busyPercent = Math.max(0, Math.min(100, Math.round(percent)));
+    this.emit();
+  }
+
+  /** Show success panel on loading overlay (keeps project in memory). */
+  showResultDialog(dialog: ResultDialog) {
+    this.ui.busyMessage = null;
+    this.ui.busyPercent = null;
+    this.ui.resultDialog = dialog;
+    this.emit();
+  }
+
+  clearResultDialog() {
+    this.ui.resultDialog = null;
+    this.ui.busyMessage = null;
+    this.ui.busyPercent = null;
     this.emit();
   }
 
@@ -95,7 +141,6 @@ export class ProjectStore {
 
   setMode(mode: AppMode) {
     this.ui.mode = mode;
-    this.ui.measureDraft = null;
     this.emit();
   }
 
@@ -107,7 +152,6 @@ export class ProjectStore {
   selectScene(id: string | null) {
     this.ui.activeSceneId = id;
     this.ui.selectedHotspotId = null;
-    this.ui.selectedMeasureId = null;
     this.emit();
   }
 
@@ -128,6 +172,7 @@ export class ProjectStore {
     }
     if (this.ui.activeSceneId === id) {
       this.ui.activeSceneId = this.project.scenes[0]?.id ?? null;
+      this.ui.selectedHotspotId = null;
     }
     this.touch();
   }
@@ -138,6 +183,16 @@ export class ProjectStore {
       s.name = name;
       this.touch();
     }
+  }
+
+  /** Reorder scenes: move index from → to */
+  moveScene(fromIndex: number, toIndex: number) {
+    const list = this.project.scenes;
+    if (fromIndex < 0 || fromIndex >= list.length || toIndex < 0 || toIndex >= list.length) return;
+    if (fromIndex === toIndex) return;
+    const [item] = list.splice(fromIndex, 1);
+    list.splice(toIndex, 0, item);
+    this.touch();
   }
 
   updateActiveInitialView(view: ViewParams) {
@@ -155,13 +210,14 @@ export class ProjectStore {
     this.touch();
   }
 
-  updateHotspot(id: string, patch: Partial<Hotspot>) {
+  updateHotspot(id: string, patch: Partial<Hotspot>, opts?: { silent?: boolean }) {
     const s = this.activeScene;
     if (!s) return;
     const i = s.hotspots.findIndex((h) => h.id === id);
     if (i < 0) return;
     s.hotspots[i] = { ...s.hotspots[i], ...patch } as Hotspot;
-    this.touch();
+    this.project.updatedAt = new Date().toISOString();
+    if (!opts?.silent) this.emit();
   }
 
   removeHotspot(id: string) {
@@ -174,27 +230,6 @@ export class ProjectStore {
 
   selectHotspot(id: string | null) {
     this.ui.selectedHotspotId = id;
-    this.emit();
-  }
-
-  addMeasurement(m: Measurement) {
-    const s = this.activeScene;
-    if (!s) return;
-    s.measurements.push(m);
-    this.ui.selectedMeasureId = m.id;
-    this.touch();
-  }
-
-  removeMeasurement(id: string) {
-    const s = this.activeScene;
-    if (!s) return;
-    s.measurements = s.measurements.filter((m) => m.id !== id);
-    if (this.ui.selectedMeasureId === id) this.ui.selectedMeasureId = null;
-    this.touch();
-  }
-
-  setMeasureDraft(p: { yaw: number; pitch: number } | null) {
-    this.ui.measureDraft = p;
     this.emit();
   }
 }

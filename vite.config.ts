@@ -24,6 +24,10 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
+    watch: {
+      // deploy output must not hot-reload the editor
+      ignored: ['**/site/**', '**/dist/**', '**/node_modules/**'],
+    },
     proxy: {
       '/api': 'http://127.0.0.1:8889',
       '/site': 'http://127.0.0.1:8889',

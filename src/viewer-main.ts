@@ -1,14 +1,17 @@
-import * as THREE from 'three';
 import { PanoramaEngine } from './panorama/PanoramaEngine';
 import {
   PACKAGE_FORMAT,
   PACKAGE_VERSION,
   defaultSettings,
+  FOV_MAX,
   type ProjectDocument,
   type ProjectPackage,
   type SceneHotspot,
 } from './core/types/project';
 import { t } from './core/i18n/zh-Hant';
+
+const ICON_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>`;
+const ICON_SCENE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`;
 
 async function loadPackage(): Promise<ProjectDocument> {
   const url = new URL('project.json', location.href).toString();
@@ -18,12 +21,13 @@ async function loadPackage(): Promise<ProjectDocument> {
   if (pkg.format !== PACKAGE_FORMAT || pkg.version !== PACKAGE_VERSION) {
     throw new Error('專案格式不支援');
   }
-  // resolve relative asset urls against this page
   for (const s of pkg.project.scenes) {
     if (!/^https?:|blob:|data:/i.test(s.source.url)) {
       s.source.url = new URL(s.source.url, location.href).toString();
     }
+    delete (s as { measurements?: unknown }).measurements;
   }
+  pkg.project.settings = { ...defaultSettings(), ...pkg.project.settings };
   return pkg.project;
 }
 
@@ -45,6 +49,11 @@ async function main() {
       <div class="viewer-bar">
         <img src="/brand/clp-light.png" alt="CLP" onerror="this.style.display='none'" />
         <div class="title" id="v-title"></div>
+        <div class="viewer-tools">
+          <button type="button" id="v-parallax">3D 移動</button>
+          <button type="button" id="v-auto">自動旋轉</button>
+          <button type="button" id="v-fs">全螢幕</button>
+        </div>
       </div>
       <div class="viewer-stage" id="v-stage">
         <div class="viewer-scenes" id="v-scenes"></div>
@@ -57,19 +66,23 @@ async function main() {
   const stage = root.querySelector('#v-stage') as HTMLElement;
   const scenesEl = root.querySelector('#v-scenes') as HTMLElement;
   const hotLayer = root.querySelector('#v-hot') as HTMLElement;
+  const btnParallax = root.querySelector('#v-parallax') as HTMLButtonElement;
+  const btnAuto = root.querySelector('#v-auto') as HTMLButtonElement;
+  const btnFs = root.querySelector('#v-fs') as HTMLButtonElement;
 
   const settings = { ...defaultSettings(), ...project.settings };
   const engine = new PanoramaEngine(stage, settings);
   stage.appendChild(hotLayer);
 
   let activeId = project.scenes[0]?.id ?? null;
+  if (settings.autorotateEnabled) {
+    engine.setAutorotate(true);
+    btnAuto.classList.add('on');
+  }
 
   const renderSceneButtons = () => {
     scenesEl.innerHTML = project.scenes
-      .map(
-        (s) =>
-          `<button data-id="${s.id}" class="${s.id === activeId ? 'active' : ''}">${s.name}</button>`
-      )
+      .map((s) => `<button type="button" data-id="${s.id}" class="${s.id === activeId ? 'active' : ''}">${s.name}</button>`)
       .join('');
     scenesEl.querySelectorAll('button').forEach((b) => {
       b.addEventListener('click', () => void switchScene((b as HTMLElement).dataset.id!));
@@ -87,13 +100,34 @@ async function main() {
       el.className = `hotspot-pin ${h.type}`;
       el.style.left = `${scr.x}px`;
       el.style.top = `${scr.y}px`;
-      el.innerHTML = `<div class="glyph"></div>`;
+      const label =
+        h.type === 'info'
+          ? h.title || '注解'
+          : (() => {
+              const tgt = project.scenes.find((s) => s.id === (h as SceneHotspot).targetSceneId);
+              return tgt ? `→ ${tgt.name}` : '場景';
+            })();
+      el.innerHTML = `<div class="glyph">${h.type === 'info' ? ICON_INFO : ICON_SCENE}</div><div class="pin-label">${label}</div>`;
       el.style.pointerEvents = 'auto';
       if (h.type === 'info') {
-        el.title = `${h.title}\n${h.text}`;
-        el.addEventListener('click', () => alert(`${h.title}\n\n${h.text}`));
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          engine.interruptAutorotate();
+          btnAuto.classList.remove('on');
+          // simple in-page tip instead of alert
+          const tip = document.createElement('div');
+          tip.className = 'viewer-info-pop';
+          tip.innerHTML = `<strong>${escapeHtml(h.title)}</strong><p>${escapeHtml(h.text)}</p><button type="button">關閉</button>`;
+          tip.style.cssText =
+            'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;background:#0f172a;padding:16px;border-radius:12px;max-width:360px;color:#fff;box-shadow:0 8px 32px rgba(0,0,0,.5)';
+          tip.querySelector('button')!.onclick = () => tip.remove();
+          document.body.appendChild(tip);
+        });
       } else {
-        el.addEventListener('click', () => void switchScene((h as SceneHotspot).targetSceneId, h as SceneHotspot));
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          void switchScene((h as SceneHotspot).targetSceneId, h as SceneHotspot);
+        });
       }
       hotLayer.appendChild(el);
     }
@@ -102,18 +136,54 @@ async function main() {
   async function switchScene(id: string, fromHotspot?: SceneHotspot) {
     const scene = project.scenes.find((s) => s.id === id);
     if (!scene) return;
+    engine.interruptAutorotate();
+    btnAuto.classList.remove('on');
+    const canvas = engine.renderer.domElement;
     if (fromHotspot) {
-      await engine.aimAndPush(fromHotspot.yaw, fromHotspot.pitch, 320);
-      await engine.transitionToUrl(scene.source.url, 500);
+      await engine.aimAndZoomIn(fromHotspot.yaw, fromHotspot.pitch, 380);
+      canvas.style.transition = 'opacity 0.35s ease';
+      canvas.style.opacity = '0';
+      await new Promise((r) => setTimeout(r, 350));
+      await engine.transitionToUrl(scene.source.url, 400);
+      canvas.style.opacity = '1';
     } else if (activeId && activeId !== id) {
-      await engine.transitionToUrl(scene.source.url, 450);
+      canvas.style.transition = 'opacity 0.3s ease';
+      canvas.style.opacity = '0';
+      await new Promise((r) => setTimeout(r, 280));
+      await engine.loadTextureFromUrl(scene.source.url);
+      canvas.style.opacity = '1';
     } else {
       await engine.loadTextureFromUrl(scene.source.url);
     }
     activeId = id;
-    engine.setView(scene.initialView, true);
+    engine.setView({ yaw: scene.initialView.yaw, pitch: scene.initialView.pitch, fov: FOV_MAX }, true);
     renderSceneButtons();
   }
+
+  btnParallax.addEventListener('click', () => {
+    const on = !btnParallax.classList.contains('on');
+    btnParallax.classList.toggle('on', on);
+    engine.setParallaxEnabled(on);
+    if (on) {
+      engine.setAutorotate(false);
+      btnAuto.classList.remove('on');
+    }
+  });
+  btnAuto.addEventListener('click', () => {
+    const on = !btnAuto.classList.contains('on');
+    btnAuto.classList.toggle('on', on);
+    engine.setAutorotate(on);
+  });
+  btnFs.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    btnFs.classList.toggle('on', !!document.fullscreenElement);
+  });
 
   renderSceneButtons();
   if (activeId) await switchScene(activeId);
@@ -123,6 +193,10 @@ async function main() {
     requestAnimationFrame(loop);
   };
   loop();
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
 main().catch(console.error);

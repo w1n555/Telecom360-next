@@ -22,8 +22,20 @@ app.use('/site', express.static(path.join(webRoot, 'site')));
 
 const vite = await createViteServer({
   root,
-  server: { middlewareMode: true },
   appType: 'spa',
+  server: {
+    middlewareMode: true,
+    // CRITICAL: one-click deploy writes into ./site/ — must NOT trigger Vite full reload
+    // (reload wipes in-memory project → all panoramas disappear, success UI never shows)
+    watch: {
+      ignored: [
+        '**/site/**',
+        '**/dist/**',
+        '**/node_modules/**',
+        '**/.git/**',
+      ],
+    },
+  },
 });
 app.use(vite.middlewares);
 

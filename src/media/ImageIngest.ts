@@ -52,7 +52,6 @@ export async function ingestEquirectFile(file: File): Promise<IngestResult> {
       },
       initialView: { ...DEFAULT_VIEW },
       hotspots: [],
-      measurements: [],
     };
     return {
       scene,
