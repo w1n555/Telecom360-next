@@ -1,0 +1,49 @@
+:root {
+  --brand: #003f91;
+  --brand-dark: #002d6b;
+  --accent: #00a1e0;
+  --accent-hover: #33b8e8;
+  --bg: #e8eef5;
+  --stage: #0b1220;
+  --card: #ffffff;
+  --sidebar: #0f172a;
+  --sidebar-text: #e8eef8;
+  --text: #0f172a;
+  --muted: #64748b;
+  --ok: #16a34a;
+  --warn: #f59e0b;
+  --err: #dc2626;
+  --radius: 12px;
+  --shadow: 0 2px 12px rgba(8, 40, 120, 0.12);
+  --font: system-ui, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --header-h: 56px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+#app,
+#viewer-app {
+  height: 100%;
+}
