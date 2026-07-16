@@ -15,7 +15,10 @@ export type AppMode = 'navigate';
 export interface ResultDialog {
   title: string;
   body: string;
-  link: string;
+  /** Optional clickable link (e.g. deploy URL); omit for plain alerts */
+  link?: string;
+  /** Visual hint for title color */
+  variant?: 'success' | 'error' | 'info';
 }
 
 export interface UiState {
@@ -26,8 +29,9 @@ export interface UiState {
   busyMessage: string | null;
   /** 0–100 while busy; null when not showing percent */
   busyPercent: number | null;
-  /** Success/info panel on the same overlay as loading (no native dialogs) */
+  /** Center modal: loading result / errors / alerts (need 確定 to close) */
   resultDialog: ResultDialog | null;
+  /** Legacy field; UI uses resultDialog modal instead */
   toast: string | null;
 }
 
@@ -37,7 +41,7 @@ export class ProjectStore {
     mode: 'navigate',
     activeSceneId: null,
     selectedHotspotId: null,
-    parallaxEnabled: false,
+    parallaxEnabled: true,
     busyMessage: null,
     busyPercent: null,
     resultDialog: null,
@@ -111,11 +115,15 @@ export class ProjectStore {
     this.emit();
   }
 
-  /** Show success panel on loading overlay (keeps project in memory). */
+  /** Show center panel on same overlay as loading (keeps project in memory). Requires 確定. */
   showResultDialog(dialog: ResultDialog) {
     this.ui.busyMessage = null;
     this.ui.busyPercent = null;
-    this.ui.resultDialog = dialog;
+    this.ui.toast = null;
+    this.ui.resultDialog = {
+      ...dialog,
+      variant: dialog.variant ?? (dialog.link ? 'success' : 'info'),
+    };
     this.emit();
   }
 
@@ -126,17 +134,26 @@ export class ProjectStore {
     this.emit();
   }
 
+  /**
+   * User-facing notice: center modal, must press 確定.
+   */
   setToast(msg: string | null) {
-    this.ui.toast = msg;
-    this.emit();
-    if (msg) {
-      window.setTimeout(() => {
-        if (this.ui.toast === msg) {
-          this.ui.toast = null;
-          this.emit();
-        }
-      }, 4200);
+    if (!msg) {
+      this.ui.toast = null;
+      this.emit();
+      return;
     }
+    const isError = /失敗|錯誤|error|fail|denied|無法|不能|missing|invalid/i.test(msg);
+    this.showResultDialog({
+      title: isError ? '錯誤' : '提示',
+      body: msg,
+      variant: isError ? 'error' : 'info',
+    });
+  }
+
+  /** Error dialog with explicit title (e.g. 部署失敗). */
+  showError(title: string, body: string) {
+    this.showResultDialog({ title, body, variant: 'error' });
   }
 
   setMode(mode: AppMode) {

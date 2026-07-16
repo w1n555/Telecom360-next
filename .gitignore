@@ -9,3 +9,6 @@ site/
 .env.*
 *.local
 .temp/
+logs/
+tools/iis/*.msi
+scripts/_*

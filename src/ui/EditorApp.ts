@@ -4,9 +4,13 @@ import { PanoramaEngine } from '../panorama/PanoramaEngine';
 import { ingestEquirectFile } from '../media/ImageIngest';
 import { buildProjectZip, downloadBlob, suggestZipName } from '../project/ExportService';
 import { importProjectZip } from '../project/ImportService';
-import { deployProject } from '../project/DeployService';
 import { uid } from '../utils/id';
-import { deployFieldsComplete, type InfoHotspot, type SceneHotspot } from '../core/types/project';
+import {
+  deployFieldsComplete,
+  projectNameComplete,
+  type InfoHotspot,
+  type SceneHotspot,
+} from '../core/types/project';
 
 const ICON_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>`;
 const ICON_SCENE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`;
@@ -45,53 +49,52 @@ export class EditorApp {
     this.root.innerHTML = `
       <div class="app-shell">
         <header class="header">
-          <img class="logo" src="/brand/clp-light.png" alt="CLP" />
+          <div class="logo-wrap" title="CLP">
+            <img class="logo" src="/brand/clp-dark.png" alt="CLP" />
+          </div>
           <div class="brand-text">Telecom360</div>
           <div class="spacer"></div>
-          <div class="deploy-fields">
-            <label>${t('siteCode')} *<input id="f-site" placeholder="e.g. FOS" required /></label>
-            <label>${t('roomName')} *<input id="f-room" placeholder="e.g. Control_Room" required /></label>
-            <label>${t('photoDate')} *<input id="f-date" placeholder="e.g. 20260423" required /></label>
-          </div>
           <button type="button" class="btn" id="btn-import">${t('openPackage')}</button>
-          <button type="button" class="btn" id="btn-export">${t('exportZip')}</button>
-          <button type="button" class="btn primary" id="btn-deploy">${t('oneClickDeploy')}</button>
+          <button type="button" class="btn primary" id="btn-export">${t('exportZip')}</button>
           <input type="file" id="file-import" class="sr-file" accept=".zip,application/zip" tabindex="-1" />
           <input type="file" id="file-scenes" class="sr-file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple tabindex="-1" />
         </header>
         <div class="main">
           <aside class="sidebar">
-            <h2>${t('projectName')}</h2>
+            <h2>${t('projectName')} *</h2>
             <div class="project-name-row">
-              <input id="project-name" />
+              <input id="project-name" type="text" required placeholder="${t('projectNameHint')}" autocomplete="off" />
             </div>
-            <div class="settings-row">
-              <label class="chk"><input type="checkbox" id="set-autorotate" /> 匯出後預設自動旋轉</label>
-              <label class="chk"><input type="checkbox" id="set-fullscreen" /> 顯示全螢幕按鈕</label>
+            <p class="field-label-hint" id="controls-hint">${t('controlsHint')}</p>
+            <div class="meta-fields">
+              <label>${t('siteCode')} *
+                <input id="f-site" type="text" required placeholder="e.g. FOS" autocomplete="off" />
+              </label>
+              <label>${t('roomName')} *
+                <input id="f-room" type="text" required placeholder="e.g. Control_Room" autocomplete="off" />
+              </label>
+              <label>${t('photoDate')} *
+                <input id="f-date" type="text" required placeholder="e.g. 20260423" autocomplete="off" />
+              </label>
             </div>
             <h2>${t('scenes')}</h2>
             <ul class="scene-list" id="scene-list"></ul>
             <div class="add-files">
               <button type="button" class="btn ghost-dark" id="btn-add-scenes" style="width:100%">${t('addScenes')}</button>
             </div>
-            <p class="hint">${t('noScenes')}</p>
-            <p class="hint">拖曳 ⋮⋮ 可調整列表順序</p>
-            <h2>已部署</h2>
-            <ul class="deployed-list" id="deployed-list"></ul>
-            <button type="button" class="btn ghost-dark" id="btn-refresh-sites" style="width:100%;margin-top:6px">重新整理列表</button>
+            <p class="hint" id="hint-empty-scenes">${t('noScenes')}</p>
+            <p class="hint" id="hint-drag" hidden>拖曳 ⋮⋮ 可調整列表順序</p>
           </aside>
           <section class="stage-wrap">
             <div class="stage-toolbar">
               <button type="button" class="btn" id="btn-info">${t('addInfo')}</button>
               <button type="button" class="btn" id="btn-scene-hs">${t('addSceneLink')}</button>
               <button type="button" class="btn" id="btn-initial">${t('setInitialView')}</button>
-              <button type="button" class="btn" id="btn-parallax">${t('parallaxOff')}</button>
             </div>
             <div id="stage">
               <div class="stage-empty" id="stage-empty">${t('noScenes')}</div>
               <div class="hotspot-layer" id="hotspot-layer"></div>
             </div>
-            <div class="stage-footer" id="stage-footer">${t('controlsHint')}</div>
           </section>
           <aside class="inspector">
             <h2>${t('inspector')}</h2>
@@ -99,7 +102,7 @@ export class EditorApp {
           </aside>
         </div>
         <div class="toast" id="toast" hidden></div>
-        <!-- One overlay for loading % AND success message (no window.alert / confirm) -->
+        <!-- One overlay for loading % AND success message (no browser native dialogs) -->
         <div class="busy" id="busy" hidden>
           <div class="busy-card">
             <div id="busy-mode-progress">
@@ -147,11 +150,6 @@ export class EditorApp {
         void this.onExport();
         return;
       }
-      if (id === 'btn-deploy') {
-        ev.preventDefault();
-        void this.onDeploy();
-        return;
-      }
       if (id === 'btn-info') {
         ev.preventDefault();
         this.addInfoHotspot();
@@ -167,10 +165,6 @@ export class EditorApp {
         this.setInitialView();
         return;
       }
-      if (id === 'btn-parallax') {
-        ev.preventDefault();
-        this.toggleParallax();
-      }
     });
 
     this.root.querySelector('#file-scenes')!.addEventListener('change', (e) => this.onAddFiles(e));
@@ -184,39 +178,6 @@ export class EditorApp {
     room.addEventListener('input', () => store.setDeploy({ roomName: room.value }));
     date.addEventListener('input', () => store.setDeploy({ photoDate: date.value }));
     pname.addEventListener('input', () => store.setProjectName(pname.value));
-    (this.root.querySelector('#set-autorotate') as HTMLInputElement).addEventListener('change', (e) => {
-      store.patchSettings({ autorotateEnabled: (e.target as HTMLInputElement).checked });
-    });
-    (this.root.querySelector('#set-fullscreen') as HTMLInputElement).addEventListener('change', (e) => {
-      store.patchSettings({ fullscreenButton: (e.target as HTMLInputElement).checked });
-    });
-    this.root.querySelector('#btn-refresh-sites')!.addEventListener('click', () => void this.refreshDeployedList());
-    void this.refreshDeployedList();
-  }
-
-  private async refreshDeployedList() {
-    const ul = this.root.querySelector('#deployed-list');
-    if (!ul) return;
-    try {
-      const res = await fetch('/api/sites');
-      const data = (await res.json()) as {
-        ok?: boolean;
-        sites?: { siteCode: string; roomName: string; photoDate: string; url: string }[];
-      };
-      const sites = data.sites || [];
-      if (!sites.length) {
-        ul.innerHTML = `<li class="hint">尚未有部署</li>`;
-        return;
-      }
-      ul.innerHTML = sites
-        .map((s) => {
-          const abs = new URL(s.url, location.origin).href;
-          return `<li class="deployed-item"><a href="${escapeAttr(abs)}" target="_blank" rel="noopener">${escapeHtml(s.siteCode)} / ${escapeHtml(s.roomName)} / ${escapeHtml(s.photoDate)}</a></li>`;
-        })
-        .join('');
-    } catch {
-      ul.innerHTML = `<li class="hint">無法載入列表</li>`;
-    }
   }
 
   private bindGlobal() {
@@ -260,6 +221,8 @@ export class EditorApp {
     if (!this.stageEl || this.engine) return;
     try {
       this.engine = new PanoramaEngine(this.stageEl, store.project.settings);
+      this.engine.setParallaxEnabled(true);
+      store.setParallaxEnabled(true);
       this.engine.setCallbacks({
         onClickSphere: () => {
           /* navigate / edit via hotspots only */
@@ -301,13 +264,17 @@ export class EditorApp {
     setIfBlurred('#f-site', p.deploy.siteCode);
     setIfBlurred('#f-room', p.deploy.roomName);
     setIfBlurred('#f-date', p.deploy.photoDate);
-    const ar = this.root.querySelector('#set-autorotate') as HTMLInputElement;
-    const fs = this.root.querySelector('#set-fullscreen') as HTMLInputElement;
-    if (document.activeElement !== ar) ar.checked = !!p.settings.autorotateEnabled;
-    if (document.activeElement !== fs) fs.checked = p.settings.fullscreenButton !== false;
+
+    // 3D always on (no toggle) — keep engine in sync
+    if (!ui.parallaxEnabled) store.setParallaxEnabled(true);
 
     const empty = this.root.querySelector('#stage-empty') as HTMLElement | null;
     if (empty) empty.hidden = p.scenes.length > 0;
+    // Sidebar empty-state hints: only when no scenes
+    const hintEmpty = this.root.querySelector('#hint-empty-scenes') as HTMLElement | null;
+    const hintDrag = this.root.querySelector('#hint-drag') as HTMLElement | null;
+    if (hintEmpty) hintEmpty.hidden = p.scenes.length > 0;
+    if (hintDrag) hintDrag.hidden = p.scenes.length === 0;
 
     const list = this.root.querySelector('#scene-list')!;
     list.innerHTML = p.scenes
@@ -366,15 +333,9 @@ export class EditorApp {
       });
     });
 
-    const paraBtn = this.root.querySelector('#btn-parallax') as HTMLButtonElement;
-    paraBtn.textContent = ui.parallaxEnabled ? t('parallaxOn') : t('parallaxOff');
-    paraBtn.classList.toggle('active', ui.parallaxEnabled);
-
-    const toast = this.root.querySelector('#toast') as HTMLElement;
-    if (ui.toast) {
-      toast.hidden = false;
-      toast.textContent = ui.toast;
-    } else toast.hidden = true;
+    // Corner toast retired — all notices use center modal (#busy result mode)
+    const toast = this.root.querySelector('#toast') as HTMLElement | null;
+    if (toast) toast.hidden = true;
 
     const busy = this.root.querySelector('#busy') as HTMLElement;
     const bar = this.root.querySelector('#busy-bar') as HTMLElement;
@@ -397,7 +358,7 @@ export class EditorApp {
       pctEl.textContent = ui.busyPercent != null ? `${pct}%` : '';
       pctEl.hidden = ui.busyPercent == null;
     } else if (result) {
-      // Success message mode — same overlay as loading
+      // Center modal (success / error / info) — must press 確定
       busy.hidden = false;
       busy.classList.add('is-on');
       if (modeProgress) modeProgress.hidden = true;
@@ -405,18 +366,47 @@ export class EditorApp {
       const titleEl = this.root.querySelector('#busy-result-title') as HTMLElement;
       const bodyEl = this.root.querySelector('#busy-result-body') as HTMLElement;
       const linkEl = this.root.querySelector('#busy-result-link') as HTMLElement;
-      if (titleEl) titleEl.textContent = result.title;
+      if (titleEl) {
+        titleEl.textContent = result.title;
+        titleEl.classList.remove('is-error', 'is-success', 'is-info');
+        titleEl.classList.add(
+          result.variant === 'error'
+            ? 'is-error'
+            : result.variant === 'success'
+              ? 'is-success'
+              : 'is-info'
+        );
+      }
       if (bodyEl) bodyEl.textContent = result.body;
       if (linkEl) {
-        linkEl.textContent = result.link;
-        linkEl.onclick = (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          void navigator.clipboard?.writeText(result.link).then(
-            () => store.setToast('已複製連結'),
-            () => store.setToast(result.link)
-          );
-        };
+        const link = (result.link || '').trim();
+        if (link) {
+          linkEl.hidden = false;
+          linkEl.textContent = link;
+          linkEl.title = '點擊複製連結';
+          linkEl.onclick = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const original = link;
+            void navigator.clipboard?.writeText(original).then(
+              () => {
+                linkEl.textContent = '已複製連結 ✓';
+                window.setTimeout(() => {
+                  if (store.ui.resultDialog?.link === original) {
+                    linkEl.textContent = original;
+                  }
+                }, 1600);
+              },
+              () => {
+                /* ignore */
+              }
+            );
+          };
+        } else {
+          linkEl.hidden = true;
+          linkEl.textContent = '';
+          linkEl.onclick = null;
+        }
       }
     } else {
       busy.hidden = true;
@@ -658,18 +648,23 @@ export class EditorApp {
     store.setToast(t('initialViewSet'));
   }
 
-  private requireDeployFields(): boolean {
-    if (!deployFieldsComplete(store.project.deploy)) {
-      store.setToast(t('deployNeedFields'));
+  private requireProjectName(): boolean {
+    if (!projectNameComplete(store.project.name)) {
+      store.showError(t('projectName'), t('projectNameRequired'));
+      const el = this.root.querySelector('#project-name') as HTMLInputElement | null;
+      el?.focus();
       return false;
     }
     return true;
   }
 
-  private toggleParallax() {
-    const on = !store.ui.parallaxEnabled;
-    store.setParallaxEnabled(on);
-    this.engine?.setParallaxEnabled(on);
+  private requireDeployFields(): boolean {
+    if (!this.requireProjectName()) return false;
+    if (!deployFieldsComplete(store.project.deploy)) {
+      store.setToast(t('deployNeedFields'));
+      return false;
+    }
+    return true;
   }
 
   private async onAddFiles(e: Event) {
@@ -686,9 +681,14 @@ export class EditorApp {
         const { scene } = await ingestEquirectFile(f);
         store.addScene(scene);
       }
-      store.setToast(`${t('ready')} · ${files.length}`);
+      const n = files.length;
+      store.showResultDialog({
+        title: t('uploadScenesDone'),
+        body: n === 1 ? '已成功加入 1 張全景圖片。' : `已成功加入 ${n} 張全景圖片。`,
+        variant: 'success',
+      });
     } catch (err) {
-      store.setToast(String((err as Error).message || err));
+      store.showError('上傳失敗', String((err as Error).message || err));
     } finally {
       store.setBusy(null);
     }
@@ -706,11 +706,23 @@ export class EditorApp {
         store.setBusy(label ? `${t('exporting')}（${label}）` : t('exporting'), p);
       });
       store.setBusy(t('exporting'), 100);
-      downloadBlob(blob, suggestZipName(store.project));
-      store.setToast(t('exportDone'));
+      const fileName = suggestZipName(store.project);
+      const d = store.project.deploy;
+      const pathHint = `site/${d.siteCode.trim()}/${d.roomName.trim()}/${d.photoDate.trim()}/`;
+      downloadBlob(blob, fileName);
+      store.showResultDialog({
+        title: t('exportDone'),
+        body:
+          `檔案名稱：${fileName}\n\n` +
+          `請將 ZIP 解壓（或把內容複製）到網站根目錄，例如：\n` +
+          `C:\\inetpub\\wwwroot\n\n` +
+          `然後用瀏覽器開啟：\n` +
+          `http://{主機}/${pathHint}`,
+        variant: 'success',
+      });
     } catch (err) {
       console.error(err);
-      store.setToast(t('exportFail'));
+      store.showError(t('exportFail'), (err as Error).message || t('exportFail'));
     } finally {
       store.setBusy(null);
     }
@@ -737,41 +749,6 @@ export class EditorApp {
       store.setBusy(null);
     }
   }
-
-  private async onDeploy() {
-    if (!store.project.scenes.length) {
-      store.setToast(t('deployNeedScenes'));
-      return;
-    }
-    if (!this.requireDeployFields()) return;
-    store.setBusy(t('deploying'), 0);
-    try {
-      const res = await deployProject(store.project, (p, label) => {
-        store.setBusy(label ? `${t('deploying')}（${label}）` : t('deploying'), p);
-      });
-      if (!res.ok) {
-        store.setBusy(null);
-        if (res.error === 'missing_fields') store.setToast(t('deployNeedFields'));
-        else if (res.error === 'no_scenes') store.setToast(t('deployNeedScenes'));
-        else if (res.error === 'file_too_large')
-          store.setToast(`${t('deployFail')}: 檔案過大（請減少圖片數或重啟伺服器）`);
-        else store.setToast(`${t('deployFail')}: ${res.error || ''}`);
-        return;
-      }
-      const fullUrl = toAbsoluteUrl(res.url || '');
-      // Store-driven success UI on same overlay — project scenes stay in memory
-      store.showResultDialog({
-        title: t('deployDone'),
-        body: '部署成功。完整連結如下（點擊可複製到剪貼簿）：',
-        link: fullUrl,
-      });
-      void this.refreshDeployedList();
-    } catch (err) {
-      console.error(err);
-      store.setBusy(null);
-      store.setToast(`${t('deployFail')}: ${(err as Error).message}`);
-    }
-  }
 }
 
 function escapeHtml(s: string): string {
@@ -780,15 +757,4 @@ function escapeHtml(s: string): string {
 
 function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/`/g, '&#96;');
-}
-
-/** Ensure deploy result is a full http(s) link for the popup. */
-function toAbsoluteUrl(url: string): string {
-  if (!url) return location.origin + '/';
-  if (/^https?:\/\//i.test(url)) return url;
-  try {
-    return new URL(url, location.origin).href;
-  } catch {
-    return `${location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
-  }
 }

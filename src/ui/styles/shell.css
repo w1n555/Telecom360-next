@@ -20,8 +20,19 @@
   position: relative;
 }
 
+.header .logo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
 .header .logo {
-  height: 28px;
+  height: 22px;
   width: auto;
   display: block;
 }
@@ -37,28 +48,7 @@
   flex: 1;
 }
 
-.header .deploy-fields {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.header .deploy-fields label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 10px;
-  opacity: 0.9;
-}
-
-.header .deploy-fields input {
-  width: 100px;
-  border: 0;
-  border-radius: 8px;
-  padding: 6px 8px;
-  color: var(--text);
-}
+/* SITE / ROOM / DATE live in sidebar (.meta-fields) */
 
 .btn {
   border: 0;
@@ -129,7 +119,7 @@
 .project-name-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .project-name-row input {
@@ -139,6 +129,48 @@
   background: #111827;
   color: #fff;
   padding: 8px 10px;
+}
+
+/* Same visual weight as sidebar section labels (e.g. 專案名稱) */
+.field-label-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.meta-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.meta-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.meta-fields input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.meta-fields input::placeholder {
+  color: #64748b;
+  font-weight: 400;
 }
 
 .scene-list {
@@ -253,7 +285,7 @@
 
 .stage-wrap {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   min-width: 0;
   min-height: 0;
   background: var(--stage);
@@ -320,32 +352,7 @@
   accent-color: var(--accent);
 }
 
-.deployed-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 160px;
-  overflow: auto;
-}
 
-.deployed-item a {
-  display: block;
-  font-size: 11px;
-  color: #7dd3fc;
-  text-decoration: none;
-  padding: 6px 8px;
-  background: #111827;
-  border-radius: 8px;
-  word-break: break-all;
-}
-
-.deployed-item a:hover {
-  background: #1e293b;
-  color: #fff;
-}
 
 #stage canvas {
   display: block;
@@ -421,20 +428,23 @@
 .hotspot-pin .pin-label {
   position: absolute;
   left: 50%;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   transform: translateX(-50%);
-  background: rgba(15, 23, 42, 0.92);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   white-space: nowrap;
-  max-width: 140px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
 @keyframes hotspot-pulse {
@@ -450,14 +460,6 @@
     transform: scale(1.35);
     opacity: 0;
   }
-}
-
-.stage-footer {
-  padding: 8px 12px;
-  color: #94a3b8;
-  font-size: 12px;
-  background: #0f172a;
-  border-top: 1px solid #1f2937;
 }
 
 .inspector label {
@@ -570,11 +572,27 @@
   color: #fff;
 }
 
+.msg-modal-title.is-error {
+  color: #fca5a5;
+}
+
+.msg-modal-title.is-success {
+  color: #86efac;
+}
+
+.msg-modal-title.is-info {
+  color: #93c5fd;
+}
+
 .msg-modal-body {
   font-size: 13px;
   line-height: 1.5;
-  color: #94a3b8;
+  color: #cbd5e1;
   margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: min(40vh, 280px);
+  overflow: auto;
 }
 
 .msg-modal-link {

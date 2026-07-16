@@ -35,7 +35,15 @@ function cloneProjectForPackage(project: ProjectDocument, opts?: { keepDataUrl?:
 
 /** Viewer must NOT embed multi-MB dataUrls (breaks browser / 138MB HTML). */
 function projectForViewer(project: ProjectDocument): ProjectDocument {
-  return cloneProjectForPackage(project, { keepDataUrl: false });
+  const doc = cloneProjectForPackage(project, { keepDataUrl: false });
+  // Fixed product defaults for published viewer
+  doc.settings = {
+    ...doc.settings,
+    autorotateEnabled: false,
+    fullscreenButton: true,
+    defaultParallaxEnabled: true,
+  };
+  return doc;
 }
 
 async function dataUrlToUint8(dataUrl: string): Promise<Uint8Array> {
@@ -86,7 +94,6 @@ function buildViewerHtml(project: ProjectDocument): string {
   const fovMax = (100 * Math.PI) / 180;
   const fovMin = (40 * Math.PI) / 180;
   const pr = project.settings.parallaxRadius ?? 120;
-  const showFs = project.settings.fullscreenButton !== false;
   return `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -110,7 +117,7 @@ function buildViewerHtml(project: ProjectDocument): string {
     .pin .glyph::before{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid currentColor;opacity:.5;animation:pulse 1.8s ease-out infinite}
     .pin.info .glyph{background:radial-gradient(circle at 35% 30%,#4dc9f0,#00a1e0 55%,#0077a8)}
     .pin.scene .glyph{background:radial-gradient(circle at 35% 30%,#3d6fd4,#003f91 55%,#001f4d)}
-    .pin .lbl{position:absolute;left:50%;top:calc(100% + 6px);transform:translateX(-50%);background:rgba(15,23,42,.92);padding:3px 8px;border-radius:8px;font-size:11px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+    .pin .lbl{position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);background:rgba(15,23,42,.95);color:#f8fafc;padding:6px 12px;border-radius:10px;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.22);box-shadow:0 4px 16px rgba(0,0,0,.55);text-shadow:0 1px 2px rgba(0,0,0,.45)}
     .tip{position:absolute;left:50%;top:48px;transform:translateX(-50%);background:rgba(15,23,42,.96);padding:8px 10px;border-radius:8px;min-width:120px;font-size:12px;display:none;z-index:5}
     .pin.open .tip{display:block}
     @keyframes pulse{0%{transform:scale(.85);opacity:.65}70%{transform:scale(1.35);opacity:0}100%{opacity:0}}
@@ -123,9 +130,8 @@ function buildViewerHtml(project: ProjectDocument): string {
   <div id="ui">
     <h1 id="title"></h1>
     <div id="tools">
-      <button type="button" id="btn-parallax">3D 移動</button>
       <button type="button" id="btn-auto">自動旋轉</button>
-      ${showFs ? '<button type="button" id="btn-fs">全螢幕</button>' : ''}
+      <button type="button" id="btn-fs">全螢幕</button>
     </div>
     <div id="hint">拖曳旋轉 · 滾輪縮放 · WASD/QE（3D 開）</div>
     <div id="scenes"></div>
@@ -158,7 +164,7 @@ function buildViewerHtml(project: ProjectDocument): string {
   const mesh = new THREE.Mesh(geo, mat); scene3.add(mesh);
   let yaw=0,pitch=0,fov=FOV_MAX, dragging=false, lx=0, ly=0;
   let offset = new THREE.Vector3();
-  let parallax=false;
+  let parallax=true;
   let active = project.scenes[0] || null;
   const keys = new Set();
   const loader = new THREE.TextureLoader();
@@ -254,12 +260,8 @@ function buildViewerHtml(project: ProjectDocument): string {
     const b=document.createElement('button'); b.type='button'; b.textContent=s.name; b.dataset.id=s.id;
     b.onclick=()=>loadScene(s); scenesEl.appendChild(b);
   });
-  let autorotate = !!(project.settings && project.settings.autorotateEnabled);
+  let autorotate = false;
   const btnAuto = document.getElementById('btn-auto');
-  if(autorotate) btnAuto.classList.add('on');
-  document.getElementById('btn-parallax').onclick=function(){
-    parallax=!parallax; if(!parallax) offset.set(0,0,0); this.classList.toggle('on', parallax); if(parallax) autorotate=false; btnAuto.classList.toggle('on', autorotate); apply();
-  };
   btnAuto.onclick=function(){
     autorotate=!autorotate; this.classList.toggle('on', autorotate);
   };
@@ -324,7 +326,7 @@ function pathSeg(raw: string, fallback: string): string {
 }
 
 /**
- * Same layout as one-click deploy:
+ * ZIP path prefix (manual copy to IIS wwwroot):
  * site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
  */
 export function deployPackagePrefix(project: ProjectDocument): string {
@@ -335,7 +337,7 @@ export function deployPackagePrefix(project: ProjectDocument): string {
 }
 
 /**
- * Export ZIP = deploy folder layout (single assets copy, small index.html).
+ * Export ZIP for manual copy to server (single assets copy, small index.html).
  *
  * site/{SITE}/{ROOM}/{DATE}/
  *   index.html          (~few KB, no base64)
@@ -344,8 +346,8 @@ export function deployPackagePrefix(project: ProjectDocument): string {
  *   assets/source/*.jpg
  * README.txt
  *
- * Unzip to web root → same URL as 一鍵部署.
- * Re-import: Editor reads project.json + assets under that folder.
+ * Unzip to web root (e.g. C:\inetpub\wwwroot) then open /site/S/R/D/
+ * Re-import: Editor「開啟專案套件」.
  */
 export async function buildProjectZip(
   project: ProjectDocument,
@@ -384,17 +386,17 @@ export async function buildProjectZip(
     'README.txt',
     `Telecom360-Three.js 專案套件
 ============================
-結構（與一鍵部署相同）：
+資料夾結構：
   site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
     index.html
     project.json
     vendor/
     assets/source/
 
-1) 解壓到 Web 根目錄後開啟：
-   http://{host}/site/{SITE}/{ROOM}/{DATE}/
-2) 繼續編輯：Editor「開啟專案套件」選本 ZIP
-3) 圖片只存一份 assets/source（無 dataUrl 重複）
+使用方式：
+1) 解壓到網站根目錄（例如 C:\\inetpub\\wwwroot）
+2) 瀏覽器開啟：http://{host}/site/{SITE}/{ROOM}/{DATE}/
+3) 若要繼續編輯：在 Editor 選擇「開啟專案套件」載入本 ZIP
 `
   );
   onProgress?.(75, '壓縮中');

@@ -50,7 +50,6 @@ async function main() {
         <img src="/brand/clp-light.png" alt="CLP" onerror="this.style.display='none'" />
         <div class="title" id="v-title"></div>
         <div class="viewer-tools">
-          <button type="button" id="v-parallax">3D 移動</button>
           <button type="button" id="v-auto">自動旋轉</button>
           <button type="button" id="v-fs">全螢幕</button>
         </div>
@@ -66,19 +65,22 @@ async function main() {
   const stage = root.querySelector('#v-stage') as HTMLElement;
   const scenesEl = root.querySelector('#v-scenes') as HTMLElement;
   const hotLayer = root.querySelector('#v-hot') as HTMLElement;
-  const btnParallax = root.querySelector('#v-parallax') as HTMLButtonElement;
   const btnAuto = root.querySelector('#v-auto') as HTMLButtonElement;
   const btnFs = root.querySelector('#v-fs') as HTMLButtonElement;
 
-  const settings = { ...defaultSettings(), ...project.settings };
+  // Viewer defaults: 3D always on; autorotate button present but OFF; fullscreen always available
+  const settings = {
+    ...defaultSettings(),
+    ...project.settings,
+    fullscreenButton: true,
+    defaultParallaxEnabled: true,
+    autorotateEnabled: false,
+  };
   const engine = new PanoramaEngine(stage, settings);
+  engine.setParallaxEnabled(true);
   stage.appendChild(hotLayer);
 
   let activeId = project.scenes[0]?.id ?? null;
-  if (settings.autorotateEnabled) {
-    engine.setAutorotate(true);
-    btnAuto.classList.add('on');
-  }
 
   const renderSceneButtons = () => {
     scenesEl.innerHTML = project.scenes
@@ -160,15 +162,6 @@ async function main() {
     renderSceneButtons();
   }
 
-  btnParallax.addEventListener('click', () => {
-    const on = !btnParallax.classList.contains('on');
-    btnParallax.classList.toggle('on', on);
-    engine.setParallaxEnabled(on);
-    if (on) {
-      engine.setAutorotate(false);
-      btnAuto.classList.remove('on');
-    }
-  });
   btnAuto.addEventListener('click', () => {
     const on = !btnAuto.classList.contains('on');
     btnAuto.classList.toggle('on', on);

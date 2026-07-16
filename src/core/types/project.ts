@@ -102,10 +102,13 @@ export const DEFAULT_VIEW: ViewParams = {
 export function defaultSettings(): ProjectSettings {
   return {
     mouseViewMode: 'drag',
+    /** Viewer has autorotate button; default OFF */
     autorotateEnabled: false,
+    /** Viewer always shows fullscreen button */
     fullscreenButton: true,
     viewControlButtons: true,
-    defaultParallaxEnabled: false,
+    /** 3D WASD always on in viewer/editor (no toggle button) */
+    defaultParallaxEnabled: true,
     /** WASD move limit from sphere centre (larger = more walk range) */
     parallaxRadius: 120,
     sphereRadius: 500,
@@ -118,7 +121,16 @@ export function deployFieldsComplete(d: { siteCode: string; roomName: string; ph
   return Boolean(d.siteCode?.trim() && d.roomName?.trim() && d.photoDate?.trim());
 }
 
-export function emptyProject(name = '未命名專案'): ProjectDocument {
+export function projectNameComplete(name: string | undefined | null): boolean {
+  return Boolean(name?.trim());
+}
+
+/** SITE / ROOM / DATE + project name (required for export ZIP path). */
+export function exportReady(project: { name: string; deploy: { siteCode: string; roomName: string; photoDate: string } }): boolean {
+  return projectNameComplete(project.name) && deployFieldsComplete(project.deploy);
+}
+
+export function emptyProject(name = ''): ProjectDocument {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),

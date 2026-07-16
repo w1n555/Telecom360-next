@@ -1,44 +1,71 @@
-# IIS 部署說明
+# IIS 部署說明 / IIS deploy notes
 
-## 建議架構（與舊站一致）
+**中文** · English below
+
+## 中文
+
+純靜態發佈：**匯出 ZIP → 複製到網站根目錄**。
+
+### 網址
 
 ```text
-http://{server}:8888/                          → Editor
-http://{server}:8888/site/S/R/D/               → 一鍵部署成果
-http://{server}:8888/api/deploy                → 寫入 site\（Node）
+http://{server}:8888/                 → 編輯器（可選，亦可只在本機編）
+http://{server}/site/S/R/D/           → 已發佈檢視器
 ```
 
-## 方式 A：Node 直接聽 8888（最簡單）
+### 建議流程
 
-1. 安裝 Node.js  
-2. `npm.cmd install` && `npm.cmd run build`  
-3. 設定環境變數（可選）：
+1. 本機編輯並填寫專案名稱、SITE_CODE、ROOM_NAME、PHOTO_DATE  
+2. **匯出 ZIP**  
+3. 解壓到伺服器 `C:\inetpub\wwwroot`（或對應網站實體路徑）  
+4. 開啟 `http://{server}/site/{SITE}/{ROOM}/{DATE}/`
+
+### 本機 IIS（可選）
 
 ```powershell
-$env:T360_WEB_ROOT = "D:\Telecom360-Three.js\dist"
-$env:PORT = "8888"
-npm.cmd start
+npm.cmd run build
+# 系統管理員
+.\scripts\install-iis-8888.ps1
 ```
 
-4. 防火牆放行 8888  
-5. Editor：`http://165.202.7.33:8888/`
+- 實體路徑：`C:\inetpub\wwwroot`  
+- 僅靜態檔與 MIME（見 `web.config`）  
+- **不需** Node 後端  
 
-一鍵部署檔案落在 `{T360_WEB_ROOT}\site\...`。
-
-## 方式 B：IIS 靜態 + 反代 API
-
-1. `npm run build`，將 `dist\*` 放到 IIS 站台根  
-2. 另開 Node（例如 8890）跑 `npm start`（PORT=8890, T360_WEB_ROOT=IIS 實體路徑）  
-3. IIS URL Rewrite / ARR：`/api/*` → `http://127.0.0.1:8890/api/*`  
-4. 確保 `site` 資料夾對 Node 行程可寫  
-
-## MIME（若純 IIS 送 KTX2/WASM 時）
+### MIME（建議）
 
 | 副檔名 | MIME |
 |--------|------|
+| .json | application/json |
+| .mjs | application/javascript |
 | .wasm | application/wasm |
-| .ktx2 | application/octet-stream |
 
-## 權限
+---
 
-寫入 `site` 的程序（Node 或應用程式池）需要 **Modify** 權限。
+## English
+
+Static-only publish: **export ZIP → copy to web root**.
+
+### URLs
+
+```text
+http://{server}:8888/                 → Editor (optional)
+http://{server}/site/S/R/D/           → Published viewer
+```
+
+### Recommended flow
+
+1. Edit locally; fill project name, SITE_CODE, ROOM_NAME, PHOTO_DATE  
+2. **Export ZIP**  
+3. Unzip into `C:\inetpub\wwwroot` (or the site physical path)  
+4. Open `http://{server}/site/{SITE}/{ROOM}/{DATE}/`
+
+### Optional local IIS
+
+```powershell
+npm.cmd run build
+# Administrator
+.\scripts\install-iis-8888.ps1
+```
+
+Server needs **IIS static hosting only** — no Node process required for publishing viewers.
