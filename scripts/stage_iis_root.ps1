@@ -21,7 +21,11 @@ $ocrSrc = Join-Path $Repo 'public\vendor\tesseract'
 $ocrDst = Join-Path $IIS_ROOT 'vendor\tesseract'
 if (Test-Path $ocrSrc) {
   New-Item -ItemType Directory -Force -Path $ocrDst | Out-Null
-  robocopy $ocrSrc $ocrDst /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+  # Exclude local *.bak language-pack backups; only ship eng + chi_tra full tessdata
+  robocopy $ocrSrc $ocrDst /E /NFL /NDL /NJH /NJS /nc /ns /np /XF *.bak | Out-Null
+  # Drop obsolete chi_sim if present from older stages
+  $legacySim = Join-Path $ocrDst 'chi_sim.traineddata'
+  if (Test-Path $legacySim) { Remove-Item $legacySim -Force }
   Write-Host "OCR vendor staged: $ocrDst"
 }
 

@@ -82,14 +82,13 @@ function addThreeVendorToZip(zip: JSZip, files: { module: Uint8Array; core: Uint
   zip.file(`${prefix}three.core.js`, files.core);
 }
 
-/** Offline OCR runtime + eng / 繁中 / 簡中 language packs (~13MB). */
+/** Offline OCR: full tessdata eng + chi_tra (~85MB with engine). No chi_sim. */
 const OCR_VENDOR_FILES = [
   'tesseract.min.js',
   'worker.min.js',
   'tesseract-core-simd.wasm.js',
   'eng.traineddata',
   'chi_tra.traineddata',
-  'chi_sim.traineddata',
 ] as const;
 
 async function fetchVendorOcrFiles(): Promise<Record<string, Uint8Array>> {
@@ -127,7 +126,7 @@ async function fetchVendorOcrFiles(): Promise<Record<string, Uint8Array>> {
     }
   }
   throw new Error(
-    `找不到 OCR 離線檔 vendor/tesseract/（需 eng + chi_tra）。請確認網站根有 /vendor/tesseract/。詳情：${String((lastErr as Error)?.message || lastErr)}`
+    `找不到 OCR 離線檔 vendor/tesseract/（需完整 eng + chi_tra）。請確認網站根有 /vendor/tesseract/。詳情：${String((lastErr as Error)?.message || lastErr)}`
   );
 }
 
@@ -446,7 +445,7 @@ function buildViewerHtml(project: ProjectDocument): string {
   }
   resize(); if(active) loadScene(active); loop();
 
-  /* ---- OCR: button → box select → recognize eng+chi_tra → popup near cursor ---- */
+  /* ---- OCR: box select → full tessdata chi_tra+eng → popup ---- */
   const btnOcr=document.getElementById('btn-ocr');
   const ocrLayer=document.getElementById('ocr-layer');
   const ocrBox=document.getElementById('ocr-box');
@@ -504,7 +503,7 @@ function buildViewerHtml(project: ProjectDocument): string {
     const s=String(status||'');
     if(/loading tesseract core/i.test(s)) return '載入核心…';
     if(/initializing tesseract/i.test(s)) return '初始化引擎…';
-    if(/loading language/i.test(s)) return '載入語言包（中/英）…';
+    if(/loading language/i.test(s)) return '載入語言包（繁中+英，較大）…';
     if(/initializing api/i.test(s)) return '準備識別 API…';
     if(/recognizing text/i.test(s)) return '識別文字中…';
     return s || '處理中…';
@@ -524,7 +523,7 @@ function buildViewerHtml(project: ProjectDocument): string {
     }catch(e){
       throw new Error(
         '找不到 OCR 腳本：'+mainJs+
-        '\\n請重新用最新 Editor 匯出 ZIP，解壓後必須有 vendor/tesseract/ 五個檔案。\\n'+
+        '\\n請重新用最新 Editor 匯出 ZIP，解壓後 vendor/tesseract/ 需有 eng + chi_tra 完整語言包。\\n'+
         '詳情：'+(e&&e.message?e.message:e)
       );
     }
@@ -550,8 +549,8 @@ function buildViewerHtml(project: ProjectDocument): string {
     const Tesseract=await ensureTesseractLib(onPct);
     const base=ocrBaseUrl();
     const langPath=base.endsWith('/')?base.slice(0,-1):base;
-    onPct && onPct(15, '檢查語言包…');
-    const need=['eng.traineddata','chi_tra.traineddata','chi_sim.traineddata','worker.min.js','tesseract-core-simd.wasm.js'];
+    onPct && onPct(15, '檢查語言包（完整 tessdata）…');
+    const need=['eng.traineddata','chi_tra.traineddata','worker.min.js','tesseract-core-simd.wasm.js'];
     for (let i=0;i<need.length;i++){
       const f=need[i];
       const u=base+f;
@@ -559,8 +558,8 @@ function buildViewerHtml(project: ProjectDocument): string {
       if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
       onPct && onPct(15 + Math.round(((i+1)/need.length)*10), '檢查：'+f);
     }
-    // 繁中 + 簡中 + 英文（全景標牌常見混用）
-    ocrWorker=await Tesseract.createWorker(['chi_tra','chi_sim','eng'], 1, {
+    // 完整 tessdata：繁中 + 英文（香港標牌常見）
+    ocrWorker=await Tesseract.createWorker(['chi_tra','eng'], 1, {
       workerPath: base+'worker.min.js',
       langPath: langPath,
       corePath: base+'tesseract-core-simd.wasm.js',
@@ -572,21 +571,42 @@ function buildViewerHtml(project: ProjectDocument): string {
         onPct && onPct(pct, mapOcrStatus(m.status));
       },
     });
-    // Better defaults for signage / mixed CJK+Latin on photos
     await ocrWorker.setParameters({
-      tessedit_pageseg_mode: '6', // uniform block of text
+      tessedit_pageseg_mode: '6',
       preserve_interword_spaces: '1',
       user_defined_dpi: '300',
     });
     onPct && onPct(92, '引擎就緒');
     return ocrWorker;
   }
-  /** Upscale + contrast — critical for small CJK glyphs on panoramas */
-  function preprocessCrop(src){
-    const minSide=480;
-    const scale=Math.max(3, minSide/Math.max(1,src.width), minSide/Math.max(1,src.height));
-    const w=Math.max(1, Math.round(src.width*scale));
-    const h=Math.max(1, Math.round(src.height*scale));
+  /** Score OCR result: prefer longer CJK + higher confidence */
+  function scoreOcr(data){
+    const text=(data&&data.text?data.text:'').trim();
+    const conf=typeof data.confidence==='number'?data.confidence:0;
+    const cjk=(text.match(/[\\u4e00-\\u9fff]/g)||[]).length;
+    const alnum=text.replace(/\\s/g,'').length;
+    return conf*0.35 + Math.min(alnum,80)*0.4 + Math.min(cjk,40)*1.2;
+  }
+  /**
+   * Upscale + auto-invert + contrast + optional Otsu binary.
+   * Small CJK on panorama crops needs strong upscale.
+   */
+  function preprocessCrop(src, mode){
+    // mode: 'gray' | 'bin'
+    const minW=720, minH=200;
+    const scale=Math.max(4,
+      minW/Math.max(1,src.width),
+      minH/Math.max(1,src.height)
+    );
+    let w=Math.max(1, Math.round(src.width*scale));
+    let h=Math.max(1, Math.round(src.height*scale));
+    // Cap memory: max ~4MP for OCR crop
+    const maxPx=4e6;
+    if(w*h>maxPx){
+      const s=Math.sqrt(maxPx/(w*h));
+      w=Math.max(1,Math.round(w*s));
+      h=Math.max(1,Math.round(h*s));
+    }
     const out=document.createElement('canvas');
     out.width=w; out.height=h;
     const ctx=out.getContext('2d',{willReadFrequently:true});
@@ -597,22 +617,49 @@ function buildViewerHtml(project: ProjectDocument): string {
     ctx.drawImage(src,0,0,w,h);
     const img=ctx.getImageData(0,0,w,h);
     const d=img.data;
-    let min=255, max=0;
-    const gray=new Float32Array(w*h);
+    const n=w*h;
+    const gray=new Float32Array(n);
+    let sum=0, min=255, max=0;
     for(let i=0,p=0;i<d.length;i+=4,p++){
       const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-      gray[p]=g;
+      gray[p]=g; sum+=g;
       if(g<min) min=g;
       if(g>max) max=g;
     }
-    const range=Math.max(1, max-min);
-    // contrast stretch + mild sharpen-ish threshold midtones
-    for(let i=0,p=0;i<d.length;i+=4,p++){
+    const mean=sum/n;
+    // Dark plate / light text → invert so text is dark on white
+    const invert=mean<118;
+    const range=Math.max(8, max-min);
+    // Unsharp-ish: local contrast after stretch
+    for(let p=0;p<n;p++){
       let g=((gray[p]-min)/range)*255;
-      g=(g-128)*1.45+128;
-      g=Math.max(0,Math.min(255,g));
-      d[i]=d[i+1]=d[i+2]=g;
-      d[i+3]=255;
+      if(invert) g=255-g;
+      g=(g-128)*1.55+128;
+      gray[p]=Math.max(0,Math.min(255,g));
+    }
+    if(mode==='bin'){
+      // Otsu threshold
+      const hist=new Array(256).fill(0);
+      for(let p=0;p<n;p++) hist[gray[p]|0]++;
+      let sumAll=0; for(let t=0;t<256;t++) sumAll+=t*hist[t];
+      let sumB=0, wB=0, maxVar=-1, thr=128;
+      for(let t=0;t<256;t++){
+        wB+=hist[t]; if(!wB) continue;
+        const wF=n-wB; if(!wF) break;
+        sumB+=t*hist[t];
+        const mB=sumB/wB, mF=(sumAll-sumB)/wF;
+        const v=wB*wF*(mB-mF)*(mB-mF);
+        if(v>maxVar){ maxVar=v; thr=t; }
+      }
+      for(let i=0,p=0;i<d.length;i+=4,p++){
+        const v=gray[p]>=thr?255:0;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
+    }else{
+      for(let i=0,p=0;i<d.length;i+=4,p++){
+        const v=gray[p]|0;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
     }
     ctx.putImageData(img,0,0);
     return out;
@@ -655,26 +702,41 @@ function buildViewerHtml(project: ProjectDocument): string {
       const crop=document.createElement('canvas');
       crop.width=sw; crop.height=sh;
       crop.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
-      const enhanced=preprocessCrop(crop);
+      const variants=[
+        {img:preprocessCrop(crop,'gray'), psm:'6', label:'灰階區塊'},
+        {img:preprocessCrop(crop,'bin'), psm:'6', label:'二值區塊'},
+        {img:preprocessCrop(crop,'gray'), psm:'7', label:'單行'},
+        {img:preprocessCrop(crop,'gray'), psm:'11', label:'稀疏'},
+      ];
       const worker=await ensureOcrWorker(function(pct, label){
         setOcrProgress(pct, label);
         placeOcrPop(clientX, clientY);
       });
-      setOcrProgress(94, '識別文字中（中/英）…');
-      // Try block mode first, then sparse text if weak result
-      let res=await worker.recognize(enhanced);
-      let text=(res&&res.data&&res.data.text?res.data.text:'').trim();
-      const weak=!text || text.replace(/\\s/g,'').length<2;
-      if(weak){
-        setOcrProgress(96, '再試稀疏文字模式…');
-        await worker.setParameters({ tessedit_pageseg_mode: '11' });
-        res=await worker.recognize(enhanced);
-        text=(res&&res.data&&res.data.text?res.data.text:'').trim();
-        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      let bestText='', bestScore=-1;
+      for(let vi=0;vi<variants.length;vi++){
+        const v=variants[vi];
+        setOcrProgress(93+vi, '識別：'+v.label+'…');
+        await worker.setParameters({
+          tessedit_pageseg_mode: v.psm,
+          preserve_interword_spaces: '1',
+          user_defined_dpi: '300',
+        });
+        const res=await worker.recognize(v.img);
+        const data=res&&res.data?res.data:{};
+        const text=(data.text||'').trim();
+        const sc=scoreOcr(data);
+        if(text && sc>bestScore){
+          bestScore=sc;
+          bestText=text;
+        }
+        // Early exit if strong CJK result
+        const cjk=(text.match(/[\\u4e00-\\u9fff]/g)||[]).length;
+        if(cjk>=3 && (typeof data.confidence==='number'?data.confidence:0)>=55) break;
       }
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
       setOcrProgress(100, '完成');
       hideOcrProgress();
-      ocrText.textContent=text||'（未能識別。請：① 滾輪放大畫面 ② 框住整行字 ③ 避免太斜/太暗）';
+      ocrText.textContent=bestText||'（未能識別。請：① 滾輪放大 ② 框住整行字 ③ 字越大越準）';
       placeOcrPop(clientX, clientY);
     }catch(e){
       hideOcrProgress();
@@ -789,7 +851,7 @@ export async function buildProjectZip(
   const threeFiles = await fetchVendorThreeFiles();
   addThreeVendorToZip(zip, threeFiles, `${prefix}/vendor/`);
 
-  onProgress?.(8, '準備 OCR（中英）');
+  onProgress?.(8, '準備 OCR（繁中+英 完整語言包）');
   {
     const ocrFiles = await fetchVendorOcrFiles();
     addOcrVendorToZip(zip, ocrFiles, `${prefix}/vendor/tesseract/`);
@@ -819,16 +881,16 @@ export async function buildProjectZip(
   site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
     index.html
     project.json
-    vendor/              (three.js + tesseract OCR 中英)
+    vendor/              (three.js + tesseract OCR 繁中+英)
     assets/source/
 
 使用方式：
 1) 解壓到網站根目錄（例如 C:\\inetpub\\wwwroot）
 2) 瀏覽器開啟：http://{host}/site/{SITE}/{ROOM}/{DATE}/
-3) Viewer「識別文字」：框選畫面文字 → 游標旁顯示 OCR 結果（中/英）
+3) Viewer「識別文字」：框選畫面文字 → 游標旁顯示 OCR 結果（繁中/英）
 4) 若要繼續編輯：Editor「開啟 ZIP」載入本套件
 
-注意：OCR 離線檔約 +11MB（每次 ZIP 都帶，方便完全離線）
+注意：OCR 使用完整 tessdata（eng + chi_tra），離線檔約 +85MB（每次 ZIP 都帶）
 `
   );
   onProgress?.(75, '壓縮中');

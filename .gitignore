@@ -12,3 +12,5 @@ site/
 logs/
 tools/iis/*.msi
 scripts/_*
+# local tessdata backups (fast/full swaps) — not for ship
+public/vendor/tesseract/*.bak
