@@ -18,7 +18,8 @@
    - `brand\`
    - `viewer-shell\`（**匯出 ZIP 必須**；預建 Viewer 模板）
    - （可選）`viewer\`、`vendor\`、`favicon.png` 等
-4. 瀏覽器開啟網站首頁（例如 `http://localhost/`；實際 port 視 IIS 繫結而定）。
+4. 瀏覽器開啟網站首頁。**本機開發環境請用 port 8888：`http://127.0.0.1:8888/`**（唔用 :80）。  
+   一鍵：`npm run iis:setup`（需系統管理員；會停用 Default Web Site）。
 
 ### 2. 建議的 `web.config`（MIME）
 
@@ -81,7 +82,8 @@ For **end users / IT**: **IIS + copy files**. **Node.js is not required** on the
 1. Open **IIS Manager** and select the website.
 2. Note the **physical path** (often `C:\inetpub\wwwroot`).
 3. **Copy** the Editor web package into that folder (`index.html`, `assets\`, `brand\`, **`viewer-shell\`** (required for ZIP export), …).
-4. Browse the site home page (e.g. `http://localhost/`; port depends on bindings).
+4. Browse the site. **Local dev uses port 8888: `http://127.0.0.1:8888/`** (not :80).  
+   One-shot: `npm run iis:setup` (admin; stops Default Web Site).
 
 ### 2. Suggested `web.config` (MIME)
 

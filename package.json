@@ -14,7 +14,8 @@
     "poc:viewer": "node scripts/poc_viewer_package.mjs",
     "repair:sites": "node scripts/repair_site_packages.mjs",
     "self-check": "node scripts/self_check.mjs",
-    "iis:stage": "npm.cmd run build && powershell -ExecutionPolicy Bypass -File scripts/stage_iis_root.ps1"
+    "iis:stage": "npm.cmd run build && powershell -ExecutionPolicy Bypass -File scripts/stage_iis_root.ps1",
+    "iis:setup": "npm.cmd run build && powershell -ExecutionPolicy Bypass -File scripts/setup_iis_8888_only.ps1"
   },
   "dependencies": {
     "express": "^4.21.2",

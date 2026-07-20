@@ -7,8 +7,8 @@ Publish by **exporting a ZIP** and **copying files into the IIS website root** (
 
 | What | URL (example) |
 |------|----------------|
-| Editor | `http://{server}/` (IIS site; port depends on your binding) |
-| Published tour | `http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+| Editor | `http://{server}:{port}/` (local dev: **http://127.0.0.1:8888/**) |
+| Published tour | `http://{server}:{port}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
 
 ---
 
@@ -81,9 +81,11 @@ You need **IIS** and a website physical path (commonly `C:\inetpub\wwwroot`).
 2. **Copy all files** into the **IIS site root**, e.g. `C:\inetpub\wwwroot\`.
 3. Optionally add / keep `web.config` for `.json` and `.mjs` MIME types  
    (see [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)).
-4. Open the site in a browser, e.g. `http://localhost/` or `http://{server}/`.
+4. Open the site in a browser. **Local machine (this repo):** use **http://127.0.0.1:8888/** only (not port 80).
 
 **Node.js is not required** on the server for normal Editor + viewer use.
+
+**Local IIS one-shot (admin):** `npm run iis:setup` → site `Telecom360-next` on **port 8888**, Default Web Site (:80) stopped.
 
 ### B. Create a tour (Editor)
 
@@ -148,9 +150,12 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 ```bash
 npm install
 npm run build          # typecheck + Vite (editor + viewer) + prepare viewer-shell
-npm run dev            # Editor; export needs viewer-shell from a prior build
-npm run iis:stage      # build and copy dist → C:\inetpub\wwwroot
+npm run dev            # Editor on :8888 via server/dev.mjs; export needs viewer-shell
+npm run iis:stage      # build + copy dist → C:\inetpub\wwwroot (files only)
+npm run iis:setup      # build + stage + IIS site on :8888 only (admin / elevated)
 ```
+
+Local browser: **http://127.0.0.1:8888/** (Editor) · **http://127.0.0.1:8888/site/.../** (tours)
 
 - **Viewer source:** `src/viewer-main.ts` + `viewer/index.html` (uses `PanoramaEngine`).
 - **Export template:** `public/viewer-shell/` and `dist/viewer-shell/` (generated; do not hand-edit).
@@ -173,8 +178,8 @@ npm run iis:stage      # build and copy dist → C:\inetpub\wwwroot
 
 | 項目 | 網址（例子） |
 |------|----------------|
-| 編輯器 | `http://{伺服器}/`（port 視 IIS 綁定而定） |
-| 已發佈導覽 | `http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+| 編輯器 | `http://{伺服器}:{port}/`（本機：**http://127.0.0.1:8888/**） |
+| 已發佈導覽 | `http://{伺服器}:{port}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
 
 ---
 
@@ -246,9 +251,11 @@ npm run iis:stage      # build and copy dist → C:\inetpub\wwwroot
    *由開發端建置一次；使用者只需複製。匯出 ZIP 需要 `viewer-shell`。*
 2. **全部複製** 到 IIS 網站根目錄，例如 `C:\inetpub\wwwroot\`。
 3. 可選：放入／保留 `web.config`（`.json`、`.mjs` MIME，見 [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)）。
-4. 瀏覽器開啟，例如 `http://localhost/` 或 `http://{伺服器}/`。
+4. 瀏覽器開啟。**本機（此 repo）：只用 http://127.0.0.1:8888/**（唔用 port 80）。
 
 伺服器日常使用 **不必安裝 Node.js**。
+
+**本機 IIS 一鍵（要系統管理員）：** `npm run iis:setup` → 站台 `Telecom360-next` 只開 **8888**，並停用 Default Web Site (:80)。
 
 ### 乙、製作導覽（編輯器）
 
@@ -315,7 +322,10 @@ npm install
 npm run build          # typecheck + Vite + 產生 viewer-shell
 npm run dev
 npm run iis:stage      # build 後複製 dist → C:\inetpub\wwwroot
+npm run iis:setup      # build + 只綁 IIS :8888（要 admin）
 ```
+
+本機瀏覽器：**http://127.0.0.1:8888/**
 
 - Viewer 源碼：`src/viewer-main.ts` + `viewer/index.html`
 - 匯出模板：`viewer-shell/`（build 產物，勿手改）
