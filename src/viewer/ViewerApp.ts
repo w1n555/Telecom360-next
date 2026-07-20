@@ -7,8 +7,14 @@ import {
   type InfoHotspot,
   type ViewParams,
 } from '../core/types/project';
-import { ICON_INFO, ICON_SCENE } from '../shared/icons';
 import { escapeHtml } from '../shared/escapeHtml';
+import {
+  createHotspotPinElement,
+  fillViewerInfoPin,
+  fillViewerScenePin,
+  positionPin,
+} from '../shared/hotspotDom';
+import { aimFadeAndLoad, fadeAndLoad } from '../shared/sceneTransition';
 import { assetUrl } from './loadProject';
 
 /**
@@ -147,36 +153,17 @@ export class ViewerApp {
     this.pinEls.clear();
     this.pinSceneId = scene.id;
     for (const h of scene.hotspots) {
-      const el = document.createElement('div');
-      el.className = `hotspot-pin ${h.type}`;
-      el.dataset.id = h.id;
-      el.style.pointerEvents = 'auto';
-      el.style.display = 'none';
+      const el = createHotspotPinElement(h);
       if (h.type === 'info') {
-        const info = h as InfoHotspot;
-        const t0 = (info.title || '').trim();
-        const tx = (info.text || '').trim();
-        const has = Boolean(t0 || tx);
-        el.innerHTML = `<div class="glyph">${ICON_INFO}</div><div class="pin-label"></div><div class="pin-tip"></div>`;
-        const lbl = el.querySelector('.pin-label') as HTMLElement;
-        const tip = el.querySelector('.pin-tip') as HTMLElement;
-        lbl.textContent = t0;
-        lbl.hidden = !t0;
-        if (has) {
-          el.classList.add('has-content');
-          tip.innerHTML = `${t0 ? `<strong>${escapeHtml(t0)}</strong>` : ''}${tx ? `<p>${escapeHtml(tx)}</p>` : ''}`;
-        }
+        fillViewerInfoPin(el, h as InfoHotspot);
       } else {
         const sh = h as SceneHotspot;
         const tgt = this.project.scenes.find((s) => s.id === sh.targetSceneId);
-        el.innerHTML = `<div class="glyph">${ICON_SCENE}</div><div class="pin-label"></div>`;
-        const lbl = el.querySelector('.pin-label') as HTMLElement;
-        lbl.textContent = tgt ? `→ ${tgt.name}` : '場景';
+        fillViewerScenePin(el, sh, tgt?.name);
         el.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           if (!tgt || this.switching) return;
-          // Pause spin briefly; keep toggle ON so it resumes after idle
           this.engine.interruptAutorotate();
           void this.switchScene(tgt.id, sh);
         });
@@ -194,14 +181,7 @@ export class ViewerApp {
     for (const h of scene.hotspots) {
       const el = this.pinEls.get(h.id);
       if (!el) continue;
-      const scr = this.engine.projectToScreen(h.yaw, h.pitch);
-      if (!scr.visible) {
-        el.style.display = 'none';
-        continue;
-      }
-      el.style.left = `${scr.x}px`;
-      el.style.top = `${scr.y}px`;
-      el.style.display = 'block';
+      positionPin(el, this.engine.projectToScreen(h.yaw, h.pitch));
     }
   }
 
@@ -212,22 +192,16 @@ export class ViewerApp {
     this.switching = true;
     this.clearPins();
     try {
-      // Pause only — do not clear autorotate toggle (engine resumes after 5s if still on)
       this.engine.interruptAutorotate();
-      const canvas = this.engine.renderer.domElement;
       if (fromHotspot) {
-        await this.engine.aimAndZoomIn(fromHotspot.yaw, fromHotspot.pitch, 380);
-        canvas.style.transition = 'opacity 0.35s ease';
-        canvas.style.opacity = '0';
-        await new Promise((r) => setTimeout(r, 350));
-        await this.engine.transitionToUrl(scene.source.url, 400);
-        canvas.style.opacity = '1';
+        await aimFadeAndLoad(this.engine, {
+          yaw: fromHotspot.yaw,
+          pitch: fromHotspot.pitch,
+          url: scene.source.url,
+          mode: 'transition',
+        });
       } else if (this.activeId && this.activeId !== id) {
-        canvas.style.transition = 'opacity 0.3s ease';
-        canvas.style.opacity = '0';
-        await new Promise((r) => setTimeout(r, 280));
-        await this.engine.loadTextureFromUrl(scene.source.url);
-        canvas.style.opacity = '1';
+        await fadeAndLoad(this.engine, scene.source.url, { mode: 'load', fadeMs: 280 });
       } else {
         await this.engine.loadTextureFromUrl(scene.source.url);
       }

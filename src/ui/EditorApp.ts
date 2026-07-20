@@ -11,8 +11,15 @@ import {
   type InfoHotspot,
   type SceneHotspot,
 } from '../core/types/project';
-import { ICON_INFO, ICON_SCENE } from '../shared/icons';
 import { escapeHtml } from '../shared/escapeHtml';
+import {
+  createHotspotPinElement,
+  fillEditorPin,
+  positionPin,
+  setPinTypeClasses,
+  syncPinLabel,
+} from '../shared/hotspotDom';
+import { fadeCanvasIn, fadeCanvasOut } from '../shared/sceneTransition';
 
 export class EditorApp {
   private root: HTMLElement;
@@ -722,10 +729,8 @@ export class EditorApp {
       keep.add(h.id);
       let el = existing.get(h.id);
       if (!el) {
-        el = document.createElement('div');
-        el.className = `hotspot-pin ${h.type}`;
-        el.dataset.id = h.id;
-        el.innerHTML = `<div class="glyph">${h.type === 'info' ? ICON_INFO : ICON_SCENE}</div><div class="pin-label"></div>`;
+        el = createHotspotPinElement(h);
+        fillEditorPin(el, h);
         el.addEventListener('pointerdown', (ev) => {
           ev.stopPropagation();
           this.draggingHotspotId = h.id;
@@ -744,25 +749,13 @@ export class EditorApp {
         });
         this.hotspotLayer.appendChild(el);
       }
-      el.classList.toggle('selected', store.ui.selectedHotspotId === h.id);
-      el.classList.toggle('info', h.type === 'info');
-      el.classList.toggle('scene', h.type === 'scene');
-      const labelEl = el.querySelector('.pin-label') as HTMLElement | null;
-      if (labelEl) {
-        if (h.type === 'info') {
-          const t0 = (h.title || '').trim();
-          labelEl.textContent = t0;
-          labelEl.hidden = !t0;
-        } else {
-          const tgt = store.project.scenes.find((s) => s.id === h.targetSceneId);
-          labelEl.textContent = tgt ? `→ ${tgt.name}` : '場景';
-          labelEl.hidden = false;
-        }
-      }
-      const scr = this.engine.projectToScreen(h.yaw, h.pitch);
-      el.style.left = `${scr.x}px`;
-      el.style.top = `${scr.y}px`;
-      el.style.display = scr.visible ? 'block' : 'none';
+      const tgt =
+        h.type === 'scene'
+          ? store.project.scenes.find((s) => s.id === (h as SceneHotspot).targetSceneId)
+          : undefined;
+      setPinTypeClasses(el, h, store.ui.selectedHotspotId === h.id);
+      syncPinLabel(el, h, tgt?.name);
+      positionPin(el, this.engine.projectToScreen(h.yaw, h.pitch));
     }
     for (const [id, el] of existing) {
       if (!keep.has(id)) el.remove();
@@ -774,14 +767,11 @@ export class EditorApp {
     // Hide old icons immediately (before zoom / fade) for cleaner UX
     this.clearHotspotLayer();
     await this.engine.aimAndZoomIn(h.yaw, h.pitch, 380);
-    const canvas = this.engine.renderer.domElement;
-    canvas.style.transition = 'opacity 0.35s ease';
-    canvas.style.opacity = '0';
-    await new Promise((r) => setTimeout(r, 350));
+    await fadeCanvasOut(this.engine, 350);
     store.selectScene(h.targetSceneId);
     // loadActiveScene will re-enable icons after new image settles
     await new Promise((r) => setTimeout(r, 80));
-    canvas.style.opacity = '1';
+    fadeCanvasIn(this.engine);
   }
 
   private openFilePicker(selector: string) {
