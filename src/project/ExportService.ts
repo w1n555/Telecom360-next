@@ -518,11 +518,13 @@ function buildViewerHtml(project: ProjectDocument): string {
       const r=await fetch(u,{method:'GET',cache:'no-store'});
       if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
     }
+    // We ship uncompressed *.traineddata (not .gz) — must set gzip:false
     ocrWorker=await Tesseract.createWorker(['eng','chi_tra'], 1, {
       workerPath: base+'worker.min.js',
       langPath: langPath,
       corePath: base+'tesseract-core-simd.wasm.js',
       workerBlobURL: false,
+      gzip: false,
       logger: function(){},
     });
     return ocrWorker;
