@@ -168,9 +168,15 @@ function buildViewerHtml(project: ProjectDocument): string {
     #ocr-layer{position:fixed;inset:0;z-index:20;display:none;cursor:crosshair;touch-action:none}
     #ocr-layer.on{display:block}
     #ocr-box{position:absolute;border:2px solid #00a1e0;background:rgba(0,161,224,.15);pointer-events:none;display:none}
-    #ocr-pop{position:fixed;z-index:30;max-width:min(360px,80vw);background:rgba(15,23,42,.97);color:#f8fafc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;box-shadow:0 8px 28px rgba(0,0,0,.55);display:none;white-space:pre-wrap;word-break:break-word;pointer-events:auto}
+    #ocr-pop{position:fixed;z-index:30;max-width:min(360px,80vw);min-width:220px;background:rgba(15,23,42,.97);color:#f8fafc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;box-shadow:0 8px 28px rgba(0,0,0,.55);display:none;white-space:pre-wrap;word-break:break-word;pointer-events:auto}
     #ocr-pop .ocr-hd{font-size:11px;color:#94a3b8;margin-bottom:6px;font-weight:600}
     #ocr-pop .ocr-bd{user-select:text}
+    #ocr-pop .ocr-prog{margin:8px 0 4px;display:none}
+    #ocr-pop .ocr-prog.on{display:block}
+    #ocr-pop .ocr-prog-lbl{font-size:12px;color:#cbd5e1;margin-bottom:6px;font-weight:600}
+    #ocr-pop .ocr-prog-track{height:8px;border-radius:999px;background:#1e293b;overflow:hidden}
+    #ocr-pop .ocr-prog-bar{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#003f91,#00a1e0);transition:width .12s ease-out}
+    #ocr-pop .ocr-prog-pct{font-size:11px;color:#94a3b8;text-align:right;margin-top:4px}
     #ocr-pop .ocr-act{margin-top:8px;display:flex;gap:8px}
     #ocr-pop button{border:0;border-radius:8px;padding:6px 10px;background:#1e293b;color:#fff;cursor:pointer;font-size:12px;font-weight:600}
     #ocr-pop button.primary{background:#00a1e0}
@@ -203,7 +209,16 @@ function buildViewerHtml(project: ProjectDocument): string {
   </div>
   <div id="ocr-layer"><div id="ocr-box"></div></div>
   <div id="ocr-hint">拖曳框選要讀的文字，Esc 取消</div>
-  <div id="ocr-pop"><div class="ocr-hd">識別結果</div><div class="ocr-bd" id="ocr-text"></div><div class="ocr-act"><button type="button" class="primary" id="ocr-copy">複製</button><button type="button" id="ocr-close">關閉</button></div></div>
+  <div id="ocr-pop">
+    <div class="ocr-hd" id="ocr-hd">識別結果</div>
+    <div class="ocr-bd" id="ocr-text"></div>
+    <div class="ocr-prog" id="ocr-prog">
+      <div class="ocr-prog-lbl" id="ocr-prog-lbl">載入中…</div>
+      <div class="ocr-prog-track"><div class="ocr-prog-bar" id="ocr-prog-bar"></div></div>
+      <div class="ocr-prog-pct" id="ocr-prog-pct">0%</div>
+    </div>
+    <div class="ocr-act"><button type="button" class="primary" id="ocr-copy">複製</button><button type="button" id="ocr-close">關閉</button></div>
+  </div>
   <script type="importmap">
   {"imports":{"three":"./vendor/three.module.js"}}
   </script>
@@ -437,6 +452,11 @@ function buildViewerHtml(project: ProjectDocument): string {
   const ocrHint=document.getElementById('ocr-hint');
   const ocrPop=document.getElementById('ocr-pop');
   const ocrText=document.getElementById('ocr-text');
+  const ocrProg=document.getElementById('ocr-prog');
+  const ocrProgLbl=document.getElementById('ocr-prog-lbl');
+  const ocrProgBar=document.getElementById('ocr-prog-bar');
+  const ocrProgPct=document.getElementById('ocr-prog-pct');
+  const ocrHd=document.getElementById('ocr-hd');
   let ocrMode=false, ocrDrag=false, ocrX0=0, ocrY0=0, ocrWorker=null, ocrBusy=false;
   function setOcrMode(on){
     ocrMode=!!on;
@@ -446,11 +466,25 @@ function buildViewerHtml(project: ProjectDocument): string {
     ocrBox.style.display='none';
     // Do NOT hide #ocr-pop here — result popup must stay after selection ends
   }
+  function setOcrProgress(pct, label){
+    const p=Math.max(0, Math.min(100, Math.round(pct)));
+    if(ocrProg) ocrProg.classList.add('on');
+    if(ocrProgBar) ocrProgBar.style.width=p+'%';
+    if(ocrProgPct) ocrProgPct.textContent=p+'%';
+    if(ocrProgLbl && label) ocrProgLbl.textContent=label;
+    if(ocrHd) ocrHd.textContent='載入 OCR';
+    if(ocrText) ocrText.textContent='';
+  }
+  function hideOcrProgress(){
+    if(ocrProg) ocrProg.classList.remove('on');
+    if(ocrProgBar) ocrProgBar.style.width='0%';
+    if(ocrProgPct) ocrProgPct.textContent='0%';
+    if(ocrHd) ocrHd.textContent='識別結果';
+  }
   function placeOcrPop(x,y){
     ocrPop.style.display='block';
     ocrPop.style.visibility='visible';
     ocrPop.style.zIndex='40';
-    // measure after visible
     const pad=12;
     requestAnimationFrame(()=>{
       const w=ocrPop.offsetWidth||280, h=ocrPop.offsetHeight||80;
@@ -465,11 +499,21 @@ function buildViewerHtml(project: ProjectDocument): string {
     // index.html lives in site/S/R/D/ → vendor/tesseract next to it
     return new URL('vendor/tesseract/', location.href).href;
   }
-  async function ensureTesseractLib(){
+  function mapOcrStatus(status){
+    const s=String(status||'');
+    if(/loading tesseract core/i.test(s)) return '載入核心…';
+    if(/initializing tesseract/i.test(s)) return '初始化引擎…';
+    if(/loading language/i.test(s)) return '載入語言包（中/英）…';
+    if(/initializing api/i.test(s)) return '準備識別 API…';
+    if(/recognizing text/i.test(s)) return '識別文字中…';
+    return s || '處理中…';
+  }
+  async function ensureTesseractLib(onPct){
     const g=typeof window!=='undefined'?window:self;
     if(g.Tesseract && g.Tesseract.createWorker) return g.Tesseract;
     const base=ocrBaseUrl();
     const mainJs=base+'tesseract.min.js';
+    onPct && onPct(5, '下載 OCR 腳本…');
     let code='';
     try{
       const res=await fetch(mainJs, {cache:'no-store'});
@@ -479,20 +523,14 @@ function buildViewerHtml(project: ProjectDocument): string {
     }catch(e){
       throw new Error(
         '找不到 OCR 腳本：'+mainJs+
-        '\\n請重新用最新 Editor 匯出 ZIP，解壓後必須有：\\n'+
-        '  .../vendor/tesseract/tesseract.min.js\\n'+
-        '  .../vendor/tesseract/worker.min.js\\n'+
-        '  .../vendor/tesseract/tesseract-core-simd.wasm.js\\n'+
-        '  .../vendor/tesseract/eng.traineddata\\n'+
-        '  .../vendor/tesseract/chi_tra.traineddata\\n'+
+        '\\n請重新用最新 Editor 匯出 ZIP，解壓後必須有 vendor/tesseract/ 五個檔案。\\n'+
         '詳情：'+(e&&e.message?e.message:e)
       );
     }
-    // Execute UMD build in global scope (sets window.Tesseract)
+    onPct && onPct(12, '初始化 OCR 庫…');
     try{
       (0, eval)(code);
     }catch(e){
-      // fallback: classic script tag
       await new Promise(function(resolve,reject){
         const s=document.createElement('script');
         s.src=mainJs;
@@ -506,32 +544,40 @@ function buildViewerHtml(project: ProjectDocument): string {
     }
     return g.Tesseract;
   }
-  async function ensureOcrWorker(){
+  async function ensureOcrWorker(onPct){
     if(ocrWorker) return ocrWorker;
-    const Tesseract=await ensureTesseractLib();
+    const Tesseract=await ensureTesseractLib(onPct);
     const base=ocrBaseUrl();
     const langPath=base.endsWith('/')?base.slice(0,-1):base;
-    ocrText.textContent='載入 OCR 引擎（首次較慢，約 11MB）…';
-    // Verify lang files exist
-    for (const f of ['eng.traineddata','chi_tra.traineddata','worker.min.js','tesseract-core-simd.wasm.js']){
+    onPct && onPct(15, '檢查語言包…');
+    const need=['eng.traineddata','chi_tra.traineddata','worker.min.js','tesseract-core-simd.wasm.js'];
+    for (let i=0;i<need.length;i++){
+      const f=need[i];
       const u=base+f;
       const r=await fetch(u,{method:'GET',cache:'no-store'});
       if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
+      onPct && onPct(15 + Math.round(((i+1)/need.length)*10), '檢查：'+f);
     }
-    // We ship uncompressed *.traineddata (not .gz) — must set gzip:false
+    // load phase: map tesseract logger 0–1 into 25–90%
     ocrWorker=await Tesseract.createWorker(['eng','chi_tra'], 1, {
       workerPath: base+'worker.min.js',
       langPath: langPath,
       corePath: base+'tesseract-core-simd.wasm.js',
       workerBlobURL: false,
       gzip: false,
-      logger: function(){},
+      logger: function(m){
+        const p = typeof m.progress==='number' ? m.progress : 0;
+        const pct = 25 + Math.round(p * 65);
+        onPct && onPct(pct, mapOcrStatus(m.status));
+      },
     });
+    onPct && onPct(92, '引擎就緒');
     return ocrWorker;
   }
   async function runOcrOnRect(rx,ry,rw,rh, clientX, clientY){
     if(ocrBusy) return;
     if(rw<8||rh<8){
+      hideOcrProgress();
       ocrText.textContent='框太小，請再拖大一點。';
       placeOcrPop(clientX, clientY);
       setOcrMode(false);
@@ -539,27 +585,26 @@ function buildViewerHtml(project: ProjectDocument): string {
     }
     ocrBusy=true;
     btnOcr.disabled=true;
-    ocrText.textContent='識別中…';
+    placeOcrPop(clientX, clientY);
+    setOcrProgress(2, '準備截圖…');
     placeOcrPop(clientX, clientY);
     // exit select mode but keep popup visible
     setOcrMode(false);
     try{
-      // Capture WebGL pixels (preserveDrawingBuffer must be true)
       renderer.render(scene3,camera);
       const full=document.createElement('canvas');
       full.width=canvas.width; full.height=canvas.height;
       const fctx=full.getContext('2d',{willReadFrequently:true});
       fctx.drawImage(canvas,0,0);
-      // Detect blank capture (common if preserveDrawingBuffer missing)
       try{
         const sample=fctx.getImageData(Math.floor(full.width/2), Math.floor(full.height/2), 1, 1).data;
         const blank=sample[0]<2&&sample[1]<2&&sample[2]<2;
         if(blank){
-          // retry one more render
           renderer.render(scene3,camera);
           fctx.drawImage(canvas,0,0);
         }
       }catch(_e){}
+      setOcrProgress(8, '裁切選區…');
       const scaleX=canvas.width/Math.max(1,innerWidth), scaleY=canvas.height/Math.max(1,innerHeight);
       const sx=Math.max(0,Math.floor(rx*scaleX));
       const sy=Math.max(0,Math.floor(ry*scaleY));
@@ -568,14 +613,21 @@ function buildViewerHtml(project: ProjectDocument): string {
       const crop=document.createElement('canvas');
       crop.width=sw; crop.height=sh;
       crop.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
-      const worker=await ensureOcrWorker();
-      ocrText.textContent='識別中（中/英）…';
-      placeOcrPop(clientX, clientY);
-      const res=await worker.recognize(crop);
+      const worker=await ensureOcrWorker(function(pct, label){
+        setOcrProgress(pct, label);
+        placeOcrPop(clientX, clientY);
+      });
+      setOcrProgress(94, '識別文字中…');
+      const res=await worker.recognize(crop, undefined, {
+        // progress during recognize also via worker logger already attached
+      });
+      setOcrProgress(100, '完成');
       const text=(res&&res.data&&res.data.text?res.data.text:'').trim();
+      hideOcrProgress();
       ocrText.textContent=text||'（未能識別文字，請框選更清晰／更大的字）';
       placeOcrPop(clientX, clientY);
     }catch(e){
+      hideOcrProgress();
       ocrText.textContent='識別失敗：'+(e&&e.message?e.message:String(e));
       placeOcrPop(clientX, clientY);
       console.error('[OCR]', e);
