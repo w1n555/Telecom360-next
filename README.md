@@ -7,8 +7,8 @@ Publish by **exporting a ZIP** and **copying files into the IIS website root** (
 
 | What | URL (example) |
 |------|----------------|
-| Editor | `http://{server}:{port}/` (local dev: **http://127.0.0.1:8888/**) |
-| Published tour | `http://{server}:{port}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+| Editor | `http://{server}/` |
+| Published tour | `http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
 
 ---
 
@@ -22,6 +22,76 @@ Publish by **exporting a ZIP** and **copying files into the IIS website root** (
 - Deploy by **manual copy** to the IIS site root (often `C:\inetpub\wwwroot`).
 
 UI language: **Traditional Chinese**. Branding: **CLP** logo.
+
+---
+
+## Deploy (IIS) — copy only
+
+### 1. Install / update the Editor
+
+1. Download the official Release package: **`Telecom360-next-vX.Y.Z-iis.zip`**.
+2. Unzip it.
+3. **Copy all files** into the IIS website physical path (e.g. `C:\inetpub\wwwroot`).
+
+   You must have at least:
+
+   | Path | Role |
+   |------|------|
+   | `index.html` | Editor |
+   | `assets\` | Editor JS / CSS |
+   | `brand\` | Logos / favicon |
+   | `viewer-shell\` | Prebuilt Viewer template (**required for Export ZIP**) |
+   | `web.config` | MIME for `.json` / `.mjs` / `.wasm` — **already configured** |
+
+4. Open the site in a browser. The Editor is ready.
+
+**No Node.js** on the server. **No scripts** (no PowerShell, no npm).  
+`web.config` is **included in the Release ZIP** — you do not need to configure MIME types yourself.
+
+See also [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md).
+
+### 2. Create a tour (Editor)
+
+1. Open the Editor in the browser.
+2. Fill **專案名稱** (project name, required), e.g. `FOS ControlRoom`.
+3. Fill **SITE_CODE**, **ROOM_NAME**, **PHOTO_DATE** (required; used in the publish path).
+4. Click **新增全景圖片** and add equirectangular **JPG/PNG** (about **2:1** aspect).
+5. Optional: **注解**, **場景連結**, **設置初始視角**, drag scenes to reorder.
+6. Click **匯出 ZIP**.
+
+### 3. Publish a tour (manual copy)
+
+1. Unzip the tour ZIP **into the same IIS website root**, so you get:
+
+   ```text
+   {IIS root}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
+     index.html              ← prebuilt Viewer
+     project.json            ← tour data (fetched by Viewer)
+     brand\                  ← logos / favicon
+     assets\
+       viewer-*.js / *.css   ← Viewer app + three.js bundle
+       source\*.jpg          ← panorama images
+   ```
+
+   The ZIP also contains `README.txt` at the **ZIP root** (next to the `site\` folder).
+
+2. Open:
+
+   ```text
+   http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
+   ```
+
+3. To edit later: Editor → **開啟專案套件** → select the same ZIP.
+
+### Viewer controls (published page)
+
+| Control | Behaviour |
+|---------|-----------|
+| Drag | Rotate |
+| Mouse wheel | Zoom |
+| WASD / QE | 3D move (**always on**) |
+| 自動旋轉 | Button on page, **default OFF** |
+| 全螢幕 | Button on page |
 
 ---
 
@@ -63,76 +133,13 @@ UI language: **Traditional Chinese**. Branding: **CLP** logo.
 | 3D / panorama | **three.js r172** via **WebGL 2** (`PanoramaEngine`, shared) |
 | Language | **TypeScript** |
 | Apps | **Editor** (`index.html`) + **Viewer** (`viewer/index.html`) — two Vite entries |
-| Build (by development team) | **Vite 6** → `dist/` + **`viewer-shell/`** (export template) |
+| Build (by development team) | **Vite 6** → `dist/` + **`viewer-shell/`** + Release ZIP |
 | Browser export | **JSZip** assembles shell + `project.json` + images (**no runtime HTML generation**) |
 | Hosting | **IIS static files** |
 
 ---
 
-## For end users — how to use
-
-### A. Install / update the Editor (IIS)
-
-You need **IIS** and a website physical path (commonly `C:\inetpub\wwwroot`).
-
-1. Obtain the **Editor website package** from your team / release  
-   (a ready-to-copy folder with at least: `index.html`, `assets\`, `brand\`, `viewer-shell\`, …).  
-   *Developers build this package once; end users only copy it. `viewer-shell` is required for ZIP export.*
-2. **Copy all files** into the **IIS site root**, e.g. `C:\inetpub\wwwroot\`.
-3. Optionally add / keep `web.config` for `.json` and `.mjs` MIME types  
-   (see [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)).
-4. Open the site in a browser. **Local machine (this repo):** use **http://127.0.0.1:8888/** only (not port 80).
-
-**Node.js is not required** on the server for normal Editor + viewer use.
-
-**Local IIS one-shot (admin):** `npm run iis:setup` → site `Telecom360-next` on **port 8888**, Default Web Site (:80) stopped.
-
-### B. Create a tour (Editor)
-
-1. Open the Editor in the browser.
-2. Fill **專案名稱** (project name, required), e.g. `FOS ControlRoom`.
-3. Fill **SITE_CODE**, **ROOM_NAME**, **PHOTO_DATE** (required; used in the publish path).
-4. Click **新增全景圖片** and add equirectangular **JPG/PNG** (about **2:1** aspect).
-5. Optional: **注解**, **場景連結**, **設置初始視角**, drag scenes to reorder.
-6. Click **匯出 ZIP**.
-
-### C. Publish a tour (manual copy)
-
-1. Unzip the file **into the IIS website root** (not only a random desktop folder), so you get:
-
-   ```text
-   {IIS root}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
-     index.html              ← prebuilt Viewer
-     project.json            ← tour data (fetched by Viewer)
-     brand\                  ← logos / favicon
-     assets\
-       viewer-*.js / *.css   ← Viewer app + three.js bundle
-       source\*.jpg          ← panorama images
-   ```
-
-   The ZIP also contains `README.txt` at the **ZIP root** (next to the `site\` folder).
-
-2. Open:
-
-   ```text
-   http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
-   ```
-
-3. To edit later: Editor → **開啟專案套件** → select the same ZIP.
-
-### Viewer controls (published page)
-
-| Control | Behaviour |
-|---------|-----------|
-| Drag | Rotate |
-| Mouse wheel | Zoom |
-| WASD / QE | 3D move (**always on**) |
-| 自動旋轉 | Button on page, **default OFF** |
-| 全螢幕 | Button on page |
-
----
-
-## Export package layout
+## Export package layout (tour ZIP from Editor)
 
 ```text
 README.txt                          ← at ZIP root
@@ -145,24 +152,28 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
     source/*.jpg
 ```
 
-### For developers
+---
+
+## For developers
+
+End users only need the **Release IIS ZIP**. Developers build it once:
 
 ```bash
 npm install
-npm run build          # typecheck + Vite (editor + viewer) + prepare viewer-shell
-npm run dev            # Editor on :8888 via server/dev.mjs; export needs viewer-shell
-npm run iis:stage      # build + copy dist → C:\inetpub\wwwroot (files only)
-npm run iis:setup      # build + stage + IIS site on :8888 only (admin / elevated)
+npm run dev        # local Editor (default http://127.0.0.1:8888/)
+npm run build      # typecheck + Vite (editor + viewer) + prepare viewer-shell
+npm run release    # build + validate dist + zip → release/Telecom360-next-v{version}-iis.zip
 ```
 
-Local browser: **http://127.0.0.1:8888/** (Editor) · **http://127.0.0.1:8888/site/.../** (tours)
+Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asset. That ZIP is the only install package for IT.
 
 - **Viewer source:** `src/viewer/` (`main.ts`, `ViewerApp.ts`) + `viewer/index.html` (uses `PanoramaEngine`).
 - **Shared:** `src/shared/` (icons, escapeHtml), `src/panorama/PanoramaEngine.ts`.
-- **Export template:** `public/viewer-shell/` and `dist/viewer-shell/` (generated; do not hand-edit).
+- **Export template:** `viewer-shell/` (generated by build; do not hand-edit).
 - Editor **must be deployed with `viewer-shell/`** so browser export can fetch it.
 - Tour data is **only** in `project.json` (not inlined into HTML).
 - **Autorotate:** toggle on → drag/wheel pauses → resumes after **5 seconds** idle (no need to re-toggle).
+- `web.config` lives in `public/` and is copied into `dist/` / the Release ZIP automatically.
 
 ---
 
@@ -180,8 +191,8 @@ Local browser: **http://127.0.0.1:8888/** (Editor) · **http://127.0.0.1:8888/si
 
 | 項目 | 網址（例子） |
 |------|----------------|
-| 編輯器 | `http://{伺服器}:{port}/`（本機：**http://127.0.0.1:8888/**） |
-| 已發佈導覽 | `http://{伺服器}:{port}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
+| 編輯器 | `http://{伺服器}/` |
+| 已發佈導覽 | `http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/` |
 
 ---
 
@@ -195,6 +206,76 @@ Local browser: **http://127.0.0.1:8888/** (Editor) · **http://127.0.0.1:8888/si
 - **人手複製** 到 IIS 網站根（常見 `C:\inetpub\wwwroot`）發佈
 
 介面：**繁體中文**；品牌：**CLP** LOGO。
+
+---
+
+## 部署（IIS）— 只需 copy
+
+### 1. 安裝／更新編輯器
+
+1. 下載官方 Release：`Telecom360-next-vX.Y.Z-iis.zip`。
+2. 解壓。
+3. 將**全部檔案**複製到 IIS 網站實體路徑（例如 `C:\inetpub\wwwroot`）。
+
+   必須看到：
+
+   | 路徑 | 用途 |
+   |------|------|
+   | `index.html` | 編輯器 |
+   | `assets\` | 編輯器 JS / CSS |
+   | `brand\` | LOGO / favicon |
+   | `viewer-shell\` | 預建 Viewer 模板（**匯出 ZIP 必須**，勿刪） |
+   | `web.config` | 已設定 `.json` / `.mjs` / `.wasm` MIME，**無需再改 IIS** |
+
+4. 瀏覽器開啟網站首頁 → 即可使用。
+
+伺服器**不需要** Node.js，也**不需要**執行任何腳本。  
+`web.config` **已包含在 Release ZIP 內**，一般不用再手動設定 MIME。
+
+詳見 [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)。
+
+### 2. 製作導覽（編輯器）
+
+1. 瀏覽器開啟編輯器。
+2. 填 **專案名稱**（必填），例如 `FOS ControlRoom`。
+3. 填 **SITE_CODE**、**ROOM_NAME**、**PHOTO_DATE**（必填；決定發佈路徑）。
+4. 按 **新增全景圖片**，加入約 **2:1** 的 equirectangular **JPG/PNG**。
+5. 可選：**注解**、**場景連結**、**設置初始視角**、拖曳調整場景順序。
+6. 按 **匯出 ZIP**。
+
+### 3. 發佈導覽（人手複製）
+
+1. 將導覽 ZIP **解壓到同一個 IIS 網站根目錄**，使出現：
+
+   ```text
+   {IIS 根目錄}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
+     index.html              ← 預建 Viewer
+     project.json            ← 導覽資料（Viewer 以 fetch 載入）
+     brand\
+     assets\
+       viewer-*.js / *.css   ← Viewer 應用（含 three.js）
+       source\*.jpg          ← 全景圖
+   ```
+
+   ZIP **根層**另有 `README.txt`（與 `site\` 同一層）。
+
+2. 瀏覽器開啟：
+
+   ```text
+   http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
+   ```
+
+3. 之後要再改：編輯器 → **開啟專案套件** → 選同一個 ZIP。
+
+### 檢視器操作（發佈後頁面）
+
+| 操作 | 說明 |
+|------|------|
+| 拖曳 | 旋轉 |
+| 滾輪 | 縮放 |
+| WASD / QE | 3D 移動（**預設開**） |
+| 自動旋轉 | 頁面有掣，**預設關** |
+| 全螢幕 | 頁面有掣 |
 
 ---
 
@@ -236,75 +317,13 @@ Local browser: **http://127.0.0.1:8888/** (Editor) · **http://127.0.0.1:8888/si
 | 全景 / 3D | **three.js r172**（**WebGL 2**；共用 `PanoramaEngine`） |
 | 語言 | **TypeScript** |
 | 應用 | **編輯器** + **檢視器**（兩個 Vite entry） |
-| 建置（由開發團隊） | **Vite 6** → `dist/` + **`viewer-shell/`**（匯出模板） |
+| 建置（由開發團隊） | **Vite 6** → `dist/` + **`viewer-shell/`** + Release ZIP |
 | 瀏覽器匯出 | **JSZip** 組裝 shell + `project.json` + 圖片（**不再 runtime 砌 HTML**） |
 | 上線 | **IIS 靜態網站** |
 
 ---
 
-## 使用說明（給一般使用者）
-
-### 甲、安裝／更新編輯器（IIS）
-
-需要 **IIS** 與網站實體路徑（多數是 `C:\inetpub\wwwroot`）。
-
-1. 向團隊／發佈包取得 **編輯器網站檔案**  
-   （可直接複製的資料夾，至少含：`index.html`、`assets\`、`brand\`、`viewer-shell\` …）。  
-   *由開發端建置一次；使用者只需複製。匯出 ZIP 需要 `viewer-shell`。*
-2. **全部複製** 到 IIS 網站根目錄，例如 `C:\inetpub\wwwroot\`。
-3. 可選：放入／保留 `web.config`（`.json`、`.mjs` MIME，見 [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)）。
-4. 瀏覽器開啟。**本機（此 repo）：只用 http://127.0.0.1:8888/**（唔用 port 80）。
-
-伺服器日常使用 **不必安裝 Node.js**。
-
-**本機 IIS 一鍵（要系統管理員）：** `npm run iis:setup` → 站台 `Telecom360-next` 只開 **8888**，並停用 Default Web Site (:80)。
-
-### 乙、製作導覽（編輯器）
-
-1. 瀏覽器開啟編輯器。
-2. 填 **專案名稱**（必填），例如 `FOS ControlRoom`。
-3. 填 **SITE_CODE**、**ROOM_NAME**、**PHOTO_DATE**（必填；決定發佈路徑）。
-4. 按 **新增全景圖片**，加入約 **2:1** 的 equirectangular **JPG/PNG**。
-5. 可選：**注解**、**場景連結**、**設置初始視角**、拖曳調整場景順序。
-6. 按 **匯出 ZIP**。
-
-### 丙、發佈導覽（人手複製）
-
-1. 將 ZIP **解壓到 IIS 網站根目錄**，使出現：
-
-   ```text
-   {IIS 根目錄}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
-     index.html              ← 預建 Viewer
-     project.json            ← 導覽資料（Viewer 以 fetch 載入）
-     brand\
-     assets\
-       viewer-*.js / *.css   ← Viewer 應用（含 three.js）
-       source\*.jpg          ← 全景圖
-   ```
-
-   ZIP **根層**另有 `README.txt`（與 `site\` 同一層，不是在 DATE 資料夾內）。
-
-2. 瀏覽器開啟：
-
-   ```text
-   http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
-   ```
-
-3. 之後要再改：編輯器 → **開啟專案套件** → 選同一個 ZIP。
-
-### 檢視器操作（發佈後頁面）
-
-| 操作 | 說明 |
-|------|------|
-| 拖曳 | 旋轉 |
-| 滾輪 | 縮放 |
-| WASD / QE | 3D 移動（**預設開**） |
-| 自動旋轉 | 頁面有掣，**預設關** |
-| 全螢幕 | 頁面有掣 |
-
----
-
-## 匯出套件結構
+## 匯出套件結構（編輯器「匯出 ZIP」）
 
 ```text
 README.txt                          ← ZIP 根目錄
@@ -317,24 +336,28 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
     source/*.jpg
 ```
 
-### 開發者
+---
+
+## 開發者
+
+一般使用者**只需**官方 **Release IIS ZIP**。開發端建置一次後發佈：
 
 ```bash
 npm install
-npm run build          # typecheck + Vite + 產生 viewer-shell
-npm run dev
-npm run iis:stage      # build 後複製 dist → C:\inetpub\wwwroot
-npm run iis:setup      # build + 只綁 IIS :8888（要 admin）
+npm run dev        # 本機編輯器（預設 http://127.0.0.1:8888/）
+npm run build      # typecheck + Vite + 產生 viewer-shell
+npm run release    # build + 校驗 dist + 打包 → release/Telecom360-next-v{version}-iis.zip
 ```
 
-本機瀏覽器：**http://127.0.0.1:8888/**
+將 `release/Telecom360-next-v{version}-iis.zip` 上傳為 **GitHub Release** 附件，即為 IT 唯一安裝包。
 
-- Viewer 源碼：`src/viewer/`（`main.ts`、`ViewerApp.ts`）+ `viewer/index.html`
+- Viewer 源碼：`src/viewer/` + `viewer/index.html`
 - 共用：`src/shared/`、`PanoramaEngine`
 - 匯出模板：`viewer-shell/`（build 產物，勿手改）
-- 編輯器部署必須包含 `viewer-shell/`，瀏覽器匯出先 fetch 殼層再打包
+- 編輯器部署必須包含 `viewer-shell/`
 - 導覽資料只在 `project.json`，**不再** inline 進 HTML
-- **自動旋轉：** 開啟後拖拉／滾輪會暫停，**約 5 秒**無操作後自動再轉
+- `web.config` 放在 `public/`，會自動進入 `dist/` 與 Release ZIP
+- **自動旋轉：** 開啟後拖拉／滾輪會暫停，約 5 秒無操作後自動再轉
 
 ---
 

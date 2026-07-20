@@ -108,7 +108,7 @@ export async function fetchViewerShell(): Promise<ViewerShellFile[]> {
 
   const detail = lastErr instanceof Error ? lastErr.message : String(lastErr ?? '');
   throw new Error(
-    `找不到預建 viewer-shell（請先對本專案執行 npm run build，並將 dist 部署到 IIS）。${detail ? ` ${detail}` : ''}`
+    `找不到預建 viewer-shell（請重新安裝官方編輯器套件，確認網站根有 viewer-shell/ 資料夾）。${detail ? ` ${detail}` : ''}`
   );
 }
 
@@ -197,13 +197,14 @@ export async function buildProjectZip(
     assets/              (viewer JS/CSS + source 全景圖)
     brand/               (可選)
 
-使用方式：
-1) 解壓到網站根目錄（例如 C:\\inetpub\\wwwroot）
+使用方式（純靜態，無需 Node / 腳本）：
+1) 解壓到 IIS 網站根目錄（與編輯器同一層，例如 C:\\inetpub\\wwwroot）
 2) 瀏覽器開啟：http://{host}/site/{SITE}/{ROOM}/{DATE}/
-3) 若要繼續編輯：Editor「開啟 ZIP」載入本套件
+3) 若要繼續編輯：開啟編輯器 →「開啟專案套件」載入本 ZIP
 
-注意：Viewer 邏輯來自 Editor 部署時的 viewer-shell（npm run build），
-不再於匯出時 runtime 產生 HTML/JS。
+注意：
+- Viewer 為預建靜態檔，匯出時不會 runtime 產生 HTML/JS。
+- 網站根需已安裝官方編輯器套件（含 web.config），.json 才可正確載入。
 `
   );
   onProgress?.(80, '壓縮中');
