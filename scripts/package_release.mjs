@@ -105,6 +105,13 @@ function zipWithTar(zipPath, sourceDir) {
   }
 }
 
+function shouldSkipReleaseFile(name) {
+  // Never ship source maps or OS junk in the IIS ZIP
+  if (name.endsWith('.map')) return true;
+  if (name === '.DS_Store' || name === 'Thumbs.db') return true;
+  return false;
+}
+
 async function zipWithJszip(zipPath, sourceDir) {
   // Fallback if tar unavailable: use jszip from project deps
   const JSZip = (await import('jszip')).default;
@@ -113,6 +120,7 @@ async function zipWithJszip(zipPath, sourceDir) {
   function addDir(dir, prefix) {
     for (const name of fs.readdirSync(dir)) {
       if (name === '.' || name === '..') continue;
+      if (shouldSkipReleaseFile(name)) continue;
       const abs = path.join(dir, name);
       const rel = prefix ? `${prefix}/${name}` : name;
       const st = fs.statSync(abs);
@@ -133,24 +141,16 @@ async function zipWithJszip(zipPath, sourceDir) {
   fs.writeFileSync(zipPath, buf);
 }
 
+/** Prefer JSZip so we can exclude .map files consistently on all platforms. */
 async function createZip(zipPath, sourceDir) {
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-
-  const tarCheck = spawnSync('tar', ['--version'], { encoding: 'utf8' });
-  if (tarCheck.status === 0) {
-    try {
-      zipWithTar(zipPath, sourceDir);
-      // Verify non-empty
-      if (fs.existsSync(zipPath) && fs.statSync(zipPath).size > 100) {
-        console.log('[package_release] ZIP via tar');
-        return;
-      }
-    } catch (e) {
-      console.warn('[package_release] tar zip failed, falling back to JSZip:', e.message);
-    }
-  }
-
   await zipWithJszip(zipPath, sourceDir);
+  if (!fs.existsSync(zipPath) || fs.statSync(zipPath).size < 100) {
+    // last resort: tar (may include maps)
+    zipWithTar(zipPath, sourceDir);
+    console.log('[package_release] ZIP via tar (fallback)');
+    return;
+  }
   console.log('[package_release] ZIP via JSZip');
 }
 

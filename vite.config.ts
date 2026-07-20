@@ -13,7 +13,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: true,
+    // Production / Release ZIPs ship without maps (smaller, no source leakage).
+    // Set T360_SOURCEMAP=1 for local dist debugging.
+    sourcemap: process.env.T360_SOURCEMAP === '1',
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
@@ -27,10 +29,6 @@ export default defineConfig({
     watch: {
       // deploy output must not hot-reload the editor
       ignored: ['**/site/**', '**/dist/**', '**/node_modules/**'],
-    },
-    proxy: {
-      '/api': 'http://127.0.0.1:8889',
-      '/site': 'http://127.0.0.1:8889',
     },
   },
 });

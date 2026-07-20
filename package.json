@@ -11,20 +11,17 @@
     "preview": "node server/preview.mjs",
     "start": "node server/preview.mjs",
     "typecheck": "tsc --noEmit",
-    "poc:viewer": "node scripts/poc_viewer_package.mjs",
-    "repair:sites": "node scripts/repair_site_packages.mjs",
     "self-check": "node scripts/self_check.mjs",
     "release": "node scripts/package_release.mjs"
   },
   "dependencies": {
-    "express": "^4.21.2",
     "jszip": "^3.10.1",
-    "multer": "^1.4.5-lts.2",
     "three": "^0.172.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/three": "^0.172.0",
+    "express": "^4.21.2",
     "typescript": "^5.7.3",
     "vite": "^6.0.7"
   }
