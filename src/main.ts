@@ -6,6 +6,7 @@ if (!root) {
   throw new Error('Missing #app');
 }
 
+// Browser tab: product name only
 document.title = t('appTitle');
 
 const app = new EditorApp(root);

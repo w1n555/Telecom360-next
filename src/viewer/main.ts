@@ -18,7 +18,9 @@ async function main() {
     return;
   }
 
-  document.title = `${project.name} · Telecom360-next`;
+  // Browser tab: Telecom360 - {專案名稱 from Editor}
+  const name = (project.name || '').trim();
+  document.title = name ? `Telecom360 - ${name}` : 'Telecom360';
   const app = new ViewerApp(root, project);
   await app.start();
 }
