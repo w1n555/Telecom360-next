@@ -82,11 +82,17 @@ function addThreeVendorToZip(zip: JSZip, files: { module: Uint8Array; core: Uint
   zip.file(`${prefix}three.core.js`, files.core);
 }
 
-/** Offline OCR: full tessdata eng + chi_tra (~85MB with engine). No chi_sim. */
+/**
+ * Offline OCR (tesseract.js v7):
+ * - full tessdata eng + chi_tra
+ * - LSTM cores for SIMD / relaxed-SIMD / baseline (OEM LSTM_ONLY)
+ */
 const OCR_VENDOR_FILES = [
   'tesseract.min.js',
   'worker.min.js',
-  'tesseract-core-simd.wasm.js',
+  'tesseract-core-lstm.wasm.js',
+  'tesseract-core-simd-lstm.wasm.js',
+  'tesseract-core-relaxedsimd-lstm.wasm.js',
   'eng.traineddata',
   'chi_tra.traineddata',
 ] as const;
@@ -523,7 +529,7 @@ function buildViewerHtml(project: ProjectDocument): string {
     }catch(e){
       throw new Error(
         '找不到 OCR 腳本：'+mainJs+
-        '\\n請重新用最新 Editor 匯出 ZIP，解壓後 vendor/tesseract/ 需有 eng + chi_tra 完整語言包。\\n'+
+        '\\n請重新用最新 Editor 匯出 ZIP，解壓後 vendor/tesseract/ 需有 tesseract.js v7 + eng/chi_tra 完整語言包。\\n'+
         '詳情：'+(e&&e.message?e.message:e)
       );
     }
@@ -549,8 +555,11 @@ function buildViewerHtml(project: ProjectDocument): string {
     const Tesseract=await ensureTesseractLib(onPct);
     const base=ocrBaseUrl();
     const langPath=base.endsWith('/')?base.slice(0,-1):base;
-    onPct && onPct(15, '檢查語言包（完整 tessdata）…');
-    const need=['eng.traineddata','chi_tra.traineddata','worker.min.js','tesseract-core-simd.wasm.js'];
+    onPct && onPct(15, '檢查 OCR 檔（tesseract.js v7）…');
+    const need=[
+      'eng.traineddata','chi_tra.traineddata','worker.min.js',
+      'tesseract-core-lstm.wasm.js','tesseract-core-simd-lstm.wasm.js','tesseract-core-relaxedsimd-lstm.wasm.js'
+    ];
     for (let i=0;i<need.length;i++){
       const f=need[i];
       const u=base+f;
@@ -558,11 +567,11 @@ function buildViewerHtml(project: ProjectDocument): string {
       if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
       onPct && onPct(15 + Math.round(((i+1)/need.length)*10), '檢查：'+f);
     }
-    // 完整 tessdata：繁中 + 英文（香港標牌常見）
+    // v7: OEM 1 = LSTM_ONLY; corePath = directory → auto-pick simd/relaxedsimd/lstm
     ocrWorker=await Tesseract.createWorker(['chi_tra','eng'], 1, {
       workerPath: base+'worker.min.js',
       langPath: langPath,
-      corePath: base+'tesseract-core-simd.wasm.js',
+      corePath: base,
       workerBlobURL: false,
       gzip: false,
       logger: function(m){
@@ -890,7 +899,7 @@ export async function buildProjectZip(
 3) Viewer「識別文字」：框選畫面文字 → 游標旁顯示 OCR 結果（繁中/英）
 4) 若要繼續編輯：Editor「開啟 ZIP」載入本套件
 
-注意：OCR 使用完整 tessdata（eng + chi_tra），離線檔約 +85MB（每次 ZIP 都帶）
+注意：OCR 使用 tesseract.js v7 + 完整 tessdata（eng + chi_tra），離線檔約 +90MB（每次 ZIP 都帶）
 `
   );
   onProgress?.(75, '壓縮中');
