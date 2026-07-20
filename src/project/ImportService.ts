@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import {
-  PACKAGE_FORMAT,
   PACKAGE_VERSION,
+  isKnownPackageFormat,
   type ProjectDocument,
   type ProjectPackage,
   type Scene,
@@ -11,7 +11,7 @@ import type { ProgressFn } from './ExportService';
 function isPackage(x: unknown): x is ProjectPackage {
   if (!x || typeof x !== 'object') return false;
   const o = x as ProjectPackage;
-  return o.format === PACKAGE_FORMAT && o.version === PACKAGE_VERSION && !!o.project;
+  return isKnownPackageFormat(o.format) && o.version === PACKAGE_VERSION && !!o.project;
 }
 
 /**

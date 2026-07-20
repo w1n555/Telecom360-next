@@ -42,7 +42,7 @@ function pickImage() {
 }
 
 function buildHtml(project) {
-  const json = JSON.stringify({ format: 'telecom360-threejs-package', version: 1, project });
+  const json = JSON.stringify({ format: 'telecom360-next-package', version: 1, project });
   // minimal viewer same structure as ExportService (local three only)
   return `<!DOCTYPE html>
 <html lang="zh-Hant"><head>
@@ -124,7 +124,7 @@ function main() {
     updatedAt: new Date().toISOString(),
   };
 
-  fs.writeFileSync(path.join(OUT, 'project.json'), JSON.stringify({ format: 'telecom360-threejs-package', version: 1, project }, null, 2));
+  fs.writeFileSync(path.join(OUT, 'project.json'), JSON.stringify({ format: 'telecom360-next-package', version: 1, project }, null, 2));
   fs.writeFileSync(path.join(OUT, 'index.html'), buildHtml(project));
   console.log('Wrote', OUT);
 }

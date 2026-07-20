@@ -56,7 +56,7 @@ export class EditorApp {
           <div class="logo-wrap" title="CLP">
             <img class="logo" src="/brand/clp-dark.png" alt="CLP" />
           </div>
-          <div class="brand-text">Telecom360</div>
+          <div class="brand-text">Telecom360-next</div>
           <div class="spacer"></div>
           <button type="button" class="btn" id="btn-import">${t('openPackage')}</button>
           <button type="button" class="btn primary" id="btn-export">${t('exportZip')}</button>

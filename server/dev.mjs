@@ -32,7 +32,7 @@ const vite = await createViteServer({
 app.use(vite.middlewares);
 
 app.listen(port, '0.0.0.0', () => {
-  console.log(`[Telecom360-Three.js] Editor  http://127.0.0.1:${port}/`);
-  console.log(`[Telecom360-Three.js] Static site packages: ${path.join(webRoot, 'site')}`);
-  console.log(`[Telecom360-Three.js] Export ZIP → unzip to Web root (manual copy, no API)`);
+  console.log(`[Telecom360-next] Editor  http://127.0.0.1:${port}/`);
+  console.log(`[Telecom360-next] Static site packages: ${path.join(webRoot, 'site')}`);
+  console.log(`[Telecom360-next] Export ZIP → unzip to Web root (manual copy, no API)`);
 });

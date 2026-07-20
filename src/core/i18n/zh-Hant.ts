@@ -1,6 +1,6 @@
 export const zhHant = {
-  appTitle: 'Telecom360 編輯器',
-  viewerTitle: 'Telecom360 檢視器',
+  appTitle: 'Telecom360-next 編輯器',
+  viewerTitle: 'Telecom360-next 檢視器',
   openPackage: '開啟 ZIP',
   exportZip: '匯出 ZIP',
   siteCode: 'SITE_CODE',

@@ -153,7 +153,7 @@ function buildViewerHtml(project: ProjectDocument): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(project.name)} · Telecom360</title>
+  <title>${escapeHtml(project.name)} · Telecom360-next</title>
   <style>
     html,body{margin:0;height:100%;background:#0b1220;color:#e8eef8;font-family:system-ui,"Segoe UI","Noto Sans TC",sans-serif}
     #c{position:fixed;inset:0}
@@ -709,7 +709,7 @@ export async function buildProjectZip(
   zip.file(`${prefix}/index.html`, buildViewerHtml(viewerProject));
   zip.file(
     'README.txt',
-    `Telecom360-Three.js 專案套件
+    `Telecom360-next 專案套件
 ============================
 資料夾結構：
   site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
@@ -796,5 +796,5 @@ export function suggestZipName(project: ProjectDocument): string {
   if (d.siteCode && d.roomName && d.photoDate) {
     return `${slugify(d.siteCode)}_${slugify(d.roomName)}_${slugify(d.photoDate)}.zip`;
   }
-  return `${slugify(project.name) || 'telecom360'}.zip`;
+  return `${slugify(project.name) || 'telecom360-next'}.zip`;
 }

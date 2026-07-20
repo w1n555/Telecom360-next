@@ -1,9 +1,9 @@
 import { PanoramaEngine } from './panorama/PanoramaEngine';
 import {
-  PACKAGE_FORMAT,
   PACKAGE_VERSION,
   defaultSettings,
   FOV_MAX,
+  isKnownPackageFormat,
   type ProjectDocument,
   type ProjectPackage,
   type SceneHotspot,
@@ -20,7 +20,7 @@ async function loadPackage(): Promise<ProjectDocument> {
   const res = await fetch(url);
   if (!res.ok) throw new Error('找不到 project.json');
   const pkg = (await res.json()) as ProjectPackage;
-  if (pkg.format !== PACKAGE_FORMAT || pkg.version !== PACKAGE_VERSION) {
+  if (!isKnownPackageFormat(pkg.format) || pkg.version !== PACKAGE_VERSION) {
     throw new Error('專案格式不支援');
   }
   for (const s of pkg.project.scenes) {

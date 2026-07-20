@@ -1,6 +1,6 @@
-﻿# Telecom360-Three.js
+# Telecom360-next
 
-**English** · [中文](#telecom360-threejs-中文)
+**English** · [中文](#telecom360-next-中文)
 
 360° panorama **editor** and **offline viewer** for site / room walkthroughs.  
 Publish by **exporting a ZIP** and **copying files into the IIS website root** (same approach as legacy Telecom360).
@@ -27,7 +27,7 @@ UI language: **Traditional Chinese**. Branding: **CLP** logo.
 
 ## Old Telecom360 → this version
 
-| | Legacy (Marzipano) | Telecom360-Three.js |
+| | Legacy (Marzipano) | Telecom360-next |
 |--|--------------------|---------------------|
 | Engine | Marzipano | **three.js (WebGL 2)** |
 | Implementation | Older stack | **TypeScript** + modern editor UI |
@@ -150,7 +150,7 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 
 ---
 
-# Telecom360-Three.js（中文）
+# Telecom360-next（中文）
 
 360° 全景 **編輯器** 與 **離線檢視器**，用於站點／機房導覽。  
 發佈：**匯出 ZIP** → **複製到 IIS 網站根目錄**（與舊版 Telecom360 一樣靠 copy）。
@@ -177,7 +177,7 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 
 ## 舊版 → 新版
 
-| | 舊版（Marzipano） | 本版 Telecom360-Three.js |
+| | 舊版（Marzipano） | 本版 Telecom360-next |
 |--|-------------------|---------------------------|
 | 引擎 | Marzipano | **three.js（WebGL 2）** |
 | 實作 | 舊技術棧 | **TypeScript** + 新編輯介面 |

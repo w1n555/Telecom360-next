@@ -37,6 +37,6 @@ app.get('*', (req, res, next) => {
 });
 
 app.listen(port, '0.0.0.0', () => {
-  console.log(`[Telecom360-Three.js] http://127.0.0.1:${port}/`);
-  console.log(`[Telecom360-Three.js] site packages: ${path.join(webRoot, 'site')}`);
+  console.log(`[Telecom360-next] http://127.0.0.1:${port}/`);
+  console.log(`[Telecom360-next] site packages: ${path.join(webRoot, 'site')}`);
 });

@@ -1,7 +1,13 @@
-/** Telecom360-Three.js project schema (v1). Demo values in docs only — live data comes from user uploads. */
+/** Telecom360-next project schema (v1). Demo values in docs only — live data comes from user uploads. */
 
-export const PACKAGE_FORMAT = 'telecom360-threejs-package' as const;
+export const PACKAGE_FORMAT = 'telecom360-next-package' as const;
+/** Accept packages exported under the former repo/product name */
+export const PACKAGE_FORMAT_LEGACY = 'telecom360-threejs-package' as const;
 export const PACKAGE_VERSION = 1 as const;
+
+export function isKnownPackageFormat(format: string | undefined | null): boolean {
+  return format === PACKAGE_FORMAT || format === PACKAGE_FORMAT_LEGACY;
+}
 
 export type HotspotType = 'info' | 'scene';
 

@@ -1,12 +1,12 @@
 #Requires -RunAsAdministrator
-# Telecom360-Three.js - IIS static site on port 8888 -> C:\inetpub\wwwroot
+# Telecom360-next - IIS static site on port 8888 -> C:\inetpub\wwwroot
 # No Node backend / no reverse proxy. Publish = copy ZIP contents to wwwroot.
 $ErrorActionPreference = 'Stop'
-$SiteName = 'Telecom360-Three.js'
+$SiteName = 'Telecom360-next'
 $Port = 8888
 $PhysicalPath = 'C:\inetpub\wwwroot'
-$AppPool = 'Telecom360-Three.js-Pool'
-$Repo = 'C:\Users\W1NGGG\Documents\Telecom360-Three.js'
+$AppPool = 'Telecom360-next-Pool'
+$Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $StageScript = Join-Path $Repo 'scripts\stage_iis_root.ps1'
 
 if (-not (Test-Path (Join-Path $Repo 'dist\index.html'))) {
@@ -25,15 +25,17 @@ if (-not (Test-Path "IIS:\AppPools\$AppPool")) {
 }
 Set-ItemProperty "IIS:\AppPools\$AppPool" -Name managedRuntimeVersion -Value ''
 
-if (Get-Website -Name $SiteName -ErrorAction SilentlyContinue) {
-  Stop-Website -Name $SiteName -ErrorAction SilentlyContinue
-  Remove-Website -Name $SiteName
+# Remove old site name if present
+foreach ($old in @($SiteName, 'Telecom360-Three.js')) {
+  if (Get-Website -Name $old -ErrorAction SilentlyContinue) {
+    Stop-Website -Name $old -ErrorAction SilentlyContinue
+    Remove-Website -Name $old
+  }
 }
 
 New-Website -Name $SiteName -Port $Port -PhysicalPath $PhysicalPath -ApplicationPool $AppPool | Out-Null
 Write-Host "Created IIS site $SiteName on port $Port -> $PhysicalPath"
 
-# Read for static; optional write if you unzip packages as current user
 $acl = Get-Acl $PhysicalPath
 foreach ($id in @('IIS_IUSRS', 'IUSR', 'BUILTIN\IIS_IUSRS', 'BUILTIN\Users', $env:USERNAME)) {
   try {
