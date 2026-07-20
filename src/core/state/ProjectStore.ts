@@ -21,6 +21,26 @@ export interface ResultDialog {
   variant?: 'success' | 'error' | 'info';
 }
 
+/** In-app prompt / confirm (replaces window.prompt / window.confirm) */
+export interface PromptDialog {
+  title: string;
+  body?: string;
+  /** Text field value; unused when showInput is false */
+  value?: string;
+  placeholder?: string;
+  /** Show text input (rename). false = confirm only (delete). Default true. */
+  showInput?: boolean;
+  okLabel?: string;
+  cancelLabel?: string;
+  /** Danger style for delete confirm */
+  danger?: boolean;
+  /** Opaque context for the UI handler */
+  context:
+    | { type: 'rename-scene'; sceneId: string }
+    | { type: 'delete-scene'; sceneId: string }
+    | { type: 'delete-hotspot'; hotspotId: string };
+}
+
 export interface UiState {
   mode: AppMode;
   activeSceneId: string | null;
@@ -31,6 +51,8 @@ export interface UiState {
   busyPercent: number | null;
   /** Center modal: loading result / errors / alerts (need 確定 to close) */
   resultDialog: ResultDialog | null;
+  /** Center modal with text input (rename, etc.) */
+  promptDialog: PromptDialog | null;
   /** Legacy field; UI uses resultDialog modal instead */
   toast: string | null;
 }
@@ -45,6 +67,7 @@ export class ProjectStore {
     busyMessage: null,
     busyPercent: null,
     resultDialog: null,
+    promptDialog: null,
     toast: null,
   };
 
@@ -105,8 +128,11 @@ export class ProjectStore {
   setBusy(msg: string | null, percent: number | null = null) {
     this.ui.busyMessage = msg;
     this.ui.busyPercent = msg == null ? null : percent;
-    // starting a busy op clears any previous result dialog
-    if (msg != null) this.ui.resultDialog = null;
+    // starting a busy op clears any previous result / prompt dialog
+    if (msg != null) {
+      this.ui.resultDialog = null;
+      this.ui.promptDialog = null;
+    }
     this.emit();
   }
 
@@ -120,6 +146,7 @@ export class ProjectStore {
     this.ui.busyMessage = null;
     this.ui.busyPercent = null;
     this.ui.toast = null;
+    this.ui.promptDialog = null;
     this.ui.resultDialog = {
       ...dialog,
       variant: dialog.variant ?? (dialog.link ? 'success' : 'info'),
@@ -131,6 +158,21 @@ export class ProjectStore {
     this.ui.resultDialog = null;
     this.ui.busyMessage = null;
     this.ui.busyPercent = null;
+    this.emit();
+  }
+
+  /** In-app prompt with text field (e.g. rename scene). */
+  showPromptDialog(dialog: PromptDialog) {
+    this.ui.busyMessage = null;
+    this.ui.busyPercent = null;
+    this.ui.toast = null;
+    this.ui.resultDialog = null;
+    this.ui.promptDialog = { ...dialog };
+    this.emit();
+  }
+
+  clearPromptDialog() {
+    this.ui.promptDialog = null;
     this.emit();
   }
 

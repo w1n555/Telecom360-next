@@ -112,6 +112,31 @@ export class PanoramaEngine {
     this.applyView();
   }
 
+  /** Force one WebGL frame (updates GPU + ensures matrix path used by projectToScreen). */
+  forceRender() {
+    if (this.disposed) return;
+    this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld(true);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * After texture load: resize, apply initial view, render, wait layout frames.
+   * Call this BEFORE showing hotspot icons so projection matches the visible view.
+   */
+  async settleView(view: ViewParams): Promise<void> {
+    const waitFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+    this.resize();
+    this.setView(view, true);
+    this.forceRender();
+    await waitFrame();
+    this.resize();
+    this.setView(view, true);
+    this.forceRender();
+    await waitFrame();
+    this.camera.updateMatrixWorld(true);
+  }
+
   async loadTextureFromUrl(url: string): Promise<void> {
     const loader = new THREE.TextureLoader();
     const tex = await loader.loadAsync(url);
@@ -190,11 +215,16 @@ export class PanoramaEngine {
 
   /** Project spherical coords to screen CSS pixels relative to container */
   projectToScreen(yaw: number, pitch: number): { x: number; y: number; visible: boolean } {
+    // Ensure FOV/aspect + world matrix match last setView (do not wait for render())
+    this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld(true);
     const dir = sphericalToDirection(yaw, pitch);
     const world = dir.multiplyScalar(this.settings.sphereRadius * 0.98);
-    const projected = world.project(this.camera);
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
+    const projected = world.clone().project(this.camera);
+    // Prefer canvas rect (matches painted WebGL buffer) over container which can lag one layout pass
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const w = Math.max(1, rect.width || this.container.clientWidth || 1);
+    const h = Math.max(1, rect.height || this.container.clientHeight || 1);
     const x = (projected.x * 0.5 + 0.5) * w;
     const y = (-projected.y * 0.5 + 0.5) * h;
     const visible = projected.z < 1 && projected.x > -1.2 && projected.x < 1.2 && projected.y > -1.2 && projected.y < 1.2;
@@ -296,6 +326,9 @@ export class PanoramaEngine {
     const look = sphericalToDirection(this.yaw, this.pitch).add(this.offset);
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(look);
+    // Hotspot projection reads matrixWorld — must be current before projectToScreen
+    // (otherwise icons sit wrong until the next user move triggers another apply/render)
+    this.camera.updateMatrixWorld(true);
     this.callbacks.onViewChange?.(this.getView());
   }
 

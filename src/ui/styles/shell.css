@@ -131,16 +131,6 @@
   padding: 8px 10px;
 }
 
-/* Same visual weight as sidebar section labels (e.g. 專案名稱) */
-.field-label-hint {
-  margin: 0 0 14px;
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  color: #94a3b8;
-  font-weight: 650;
-  line-height: 1.45;
-}
-
 .meta-fields {
   display: flex;
   flex-direction: column;
@@ -294,7 +284,8 @@
 .stage-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 8px 10px;
   padding: 10px 12px;
   background: #111827;
   border-bottom: 1px solid #1f2937;
@@ -302,10 +293,76 @@
 
 .stage-toolbar .btn {
   background: #1e293b;
+  flex-shrink: 0;
 }
 
 .stage-toolbar .btn.active {
   background: var(--accent);
+}
+
+.stage-toolbar .toolbar-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px;
+  /* Match .btn font-size / weight */
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: #cbd5e1;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  white-space: nowrap;
+  max-width: none;
+}
+
+/* Empty project: draw attention to upload button.
+   NOTE: sidebar has overflow:auto — outer box-shadow is clipped, so animate fill/border/inner ring. */
+.btn-upload-cta.is-cta-pulse {
+  position: relative;
+  overflow: visible;
+  z-index: 2;
+  color: #fff !important;
+  background: #003f91 !important;
+  border: 2px solid #00a1e0 !important;
+  animation: upload-cta-fill 1.35s ease-in-out infinite;
+}
+
+.btn-upload-cta.is-cta-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  animation: upload-cta-ring 1.35s ease-in-out infinite;
+}
+
+@keyframes upload-cta-fill {
+  0%,
+  100% {
+    background: #003f91 !important;
+    border-color: #4dc9f0 !important;
+    filter: brightness(1);
+  }
+  50% {
+    background: #00a1e0 !important;
+    border-color: #ffffff !important;
+    filter: brightness(1.12);
+  }
+}
+
+@keyframes upload-cta-ring {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 #stage {
@@ -536,7 +593,9 @@
 .busy-text {
   font-size: 14px;
   margin-bottom: 12px;
-  line-height: 1.4;
+  line-height: 1.45;
+  white-space: pre-line;
+  word-break: break-all;
 }
 
 .busy-bar-track {
@@ -593,6 +652,63 @@
   word-break: break-word;
   max-height: min(40vh, 280px);
   overflow: auto;
+}
+
+.busy-prompt .msg-modal-body {
+  max-height: none;
+}
+
+.msg-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #fff;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 14px;
+  outline: none;
+}
+
+.msg-modal-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 161, 224, 0.25);
+}
+
+.msg-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.msg-modal-actions .btn {
+  min-width: 88px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.msg-modal-actions .btn.ghost-dark {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.msg-modal-actions .btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.msg-modal-actions .btn.primary.danger {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.msg-modal-actions .btn.primary.danger:hover {
+  background: #dc2626;
+}
+
+.msg-modal-input[hidden] {
+  display: none !important;
 }
 
 .msg-modal-link {

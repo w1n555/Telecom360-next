@@ -82,6 +82,60 @@ function addThreeVendorToZip(zip: JSZip, files: { module: Uint8Array; core: Uint
   zip.file(`${prefix}three.core.js`, files.core);
 }
 
+/** Offline OCR runtime + eng/chi_tra language packs (~11MB). */
+const OCR_VENDOR_FILES = [
+  'tesseract.min.js',
+  'worker.min.js',
+  'tesseract-core-simd.wasm.js',
+  'eng.traineddata',
+  'chi_tra.traineddata',
+] as const;
+
+async function fetchVendorOcrFiles(): Promise<Record<string, Uint8Array>> {
+  // Prefer paths relative to this module (dist/assets/main-*.js → ../vendor/tesseract/)
+  // plus absolute site-root /vendor/tesseract/ (IIS / Vite public)
+  const baseCandidates: string[] = [];
+  try {
+    baseCandidates.push(new URL('../vendor/tesseract/', import.meta.url).href);
+  } catch {
+    /* ignore */
+  }
+  baseCandidates.push(
+    new URL('/vendor/tesseract/', location.origin).href,
+    `${location.origin}/vendor/tesseract/`,
+    new URL('./vendor/tesseract/', location.href).href
+  );
+  let lastErr: unknown = null;
+  for (const base of baseCandidates) {
+    try {
+      const results = await Promise.all(
+        OCR_VENDOR_FILES.map(async (name) => {
+          const url = new URL(name, base).href;
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) throw new Error(`${name} HTTP ${res.status} @ ${url}`);
+          const buf = new Uint8Array(await res.arrayBuffer());
+          if (buf.byteLength < 1000) throw new Error(`${name} too small (${buf.byteLength}) @ ${url}`);
+          return [name, buf] as const;
+        })
+      );
+      console.info('[export] OCR vendor loaded from', base);
+      return Object.fromEntries(results);
+    } catch (e) {
+      lastErr = e;
+      console.warn('[export] OCR vendor candidate failed', base, e);
+    }
+  }
+  throw new Error(
+    `找不到 OCR 離線檔 vendor/tesseract/（需 eng + chi_tra）。請確認網站根有 /vendor/tesseract/。詳情：${String((lastErr as Error)?.message || lastErr)}`
+  );
+}
+
+function addOcrVendorToZip(zip: JSZip, files: Record<string, Uint8Array>, prefix = 'vendor/tesseract/') {
+  for (const name of OCR_VENDOR_FILES) {
+    if (files[name]) zip.file(`${prefix}${name}`, files[name]);
+  }
+}
+
 function buildViewerHtml(project: ProjectDocument): string {
   // Always strip dataUrls from inline PKG — images load from assets/source/*.jpg
   const slim = projectForViewer(project);
@@ -111,17 +165,28 @@ function buildViewerHtml(project: ProjectDocument): string {
     #tools{display:flex;gap:6px;flex-wrap:wrap}
     #tools button{border:0;border-radius:8px;padding:8px 10px;background:#1e293b;color:#fff;cursor:pointer;font-weight:600;font-size:12px}
     #tools button.on{background:#00a1e0}
-    #hot{position:fixed;inset:0;pointer-events:none;z-index:1}
-    .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer}
+    #ocr-layer{position:fixed;inset:0;z-index:20;display:none;cursor:crosshair;touch-action:none}
+    #ocr-layer.on{display:block}
+    #ocr-box{position:absolute;border:2px solid #00a1e0;background:rgba(0,161,224,.15);pointer-events:none;display:none}
+    #ocr-pop{position:fixed;z-index:30;max-width:min(360px,80vw);background:rgba(15,23,42,.97);color:#f8fafc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;box-shadow:0 8px 28px rgba(0,0,0,.55);display:none;white-space:pre-wrap;word-break:break-word;pointer-events:auto}
+    #ocr-pop .ocr-hd{font-size:11px;color:#94a3b8;margin-bottom:6px;font-weight:600}
+    #ocr-pop .ocr-bd{user-select:text}
+    #ocr-pop .ocr-act{margin-top:8px;display:flex;gap:8px}
+    #ocr-pop button{border:0;border-radius:8px;padding:6px 10px;background:#1e293b;color:#fff;cursor:pointer;font-size:12px;font-weight:600}
+    #ocr-pop button.primary{background:#00a1e0}
+    #ocr-hint{position:fixed;left:50%;top:56px;transform:translateX(-50%);z-index:25;background:rgba(0,63,145,.95);color:#fff;padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;display:none;pointer-events:none}
+    #hot{position:fixed;inset:0;pointer-events:none;z-index:5}
+    .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;z-index:6}
     .pin .glyph{width:40px;height:40px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 12px rgba(0,0,0,.5);display:grid;place-items:center;position:relative;color:#fff}
     .pin .glyph::before{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid currentColor;opacity:.5;animation:pulse 1.8s ease-out infinite}
     .pin.info .glyph{background:radial-gradient(circle at 35% 30%,#4dc9f0,#00a1e0 55%,#0077a8)}
-    .pin.scene .glyph{background:radial-gradient(circle at 35% 30%,#3d6fd4,#003f91 55%,#001f4d)}
-    .pin .lbl{position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);background:rgba(15,23,42,.95);color:#f8fafc;padding:6px 12px;border-radius:10px;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.22);box-shadow:0 4px 16px rgba(0,0,0,.55);text-shadow:0 1px 2px rgba(0,0,0,.45)}
-    .tip{position:absolute;left:50%;top:48px;transform:translateX(-50%);background:rgba(15,23,42,.96);padding:8px 10px;border-radius:8px;min-width:120px;font-size:12px;display:none;z-index:5}
-    .pin.open .tip{display:block}
+    .pin.scene .glyph{background:radial-gradient(circle at 35% 30%,#3d6fd4,#003f91 55%,#001f4d);cursor:pointer}
+    .pin .lbl{position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%);background:rgba(15,23,42,.95);color:#f8fafc;padding:6px 12px;border-radius:10px;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.22);box-shadow:0 4px 16px rgba(0,0,0,.55);pointer-events:none}
+    .pin .lbl:empty{display:none}
+    .pin .tip{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);background:rgba(15,23,42,.97);padding:10px 12px;border-radius:10px;min-width:140px;max-width:280px;font-size:13px;line-height:1.45;display:none;z-index:8;border:1px solid rgba(255,255,255,.2);box-shadow:0 8px 24px rgba(0,0,0,.55);pointer-events:none;white-space:pre-wrap;word-break:break-word}
+    .pin .tip strong{display:block;margin-bottom:4px;font-size:14px}
+    .pin.info.has-content:hover .tip,.pin.info.has-content:focus-within .tip{display:block}
     @keyframes pulse{0%{transform:scale(.85);opacity:.65}70%{transform:scale(1.35);opacity:0}100%{opacity:0}}
-    #hint{font-size:11px;color:#94a3b8;padding:0 4px}
   </style>
 </head>
 <body>
@@ -132,10 +197,13 @@ function buildViewerHtml(project: ProjectDocument): string {
     <div id="tools">
       <button type="button" id="btn-auto">自動旋轉</button>
       <button type="button" id="btn-fs">全螢幕</button>
+      <button type="button" id="btn-ocr" title="框選畫面文字進行識別">識別文字</button>
     </div>
-    <div id="hint">拖曳旋轉 · 滾輪縮放 · WASD/QE（3D 開）</div>
     <div id="scenes"></div>
   </div>
+  <div id="ocr-layer"><div id="ocr-box"></div></div>
+  <div id="ocr-hint">拖曳框選要讀的文字，Esc 取消</div>
+  <div id="ocr-pop"><div class="ocr-hd">識別結果</div><div class="ocr-bd" id="ocr-text"></div><div class="ocr-act"><button type="button" class="primary" id="ocr-copy">複製</button><button type="button" id="ocr-close">關閉</button></div></div>
   <script type="importmap">
   {"imports":{"three":"./vendor/three.module.js"}}
   </script>
@@ -153,7 +221,8 @@ function buildViewerHtml(project: ProjectDocument): string {
   document.body.appendChild(errEl);
   function showErr(m){ errEl.style.display='block'; errEl.textContent=m; console.error(m); }
   titleEl.textContent = project.name;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // preserveDrawingBuffer: required so OCR can capture the WebGL canvas (otherwise drawImage is blank)
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene3 = new THREE.Scene();
@@ -178,20 +247,41 @@ function buildViewerHtml(project: ProjectDocument): string {
     const u = (s.source && s.source.url) || '';
     try { return new URL(u, location.href).href; } catch(e){ return u; }
   }
+  let hotspotsReady = false;
+  function clearPins(){
+    hotspotsReady = false;
+    pinSceneId = null;
+    pinEls.clear();
+    hotRoot.innerHTML = '';
+  }
   function apply(){
     camera.fov=THREE.MathUtils.radToDeg(fov);camera.updateProjectionMatrix();
     offset.x=clamp(offset.x,-PR,PR);offset.y=clamp(offset.y,-PR,PR);offset.z=clamp(offset.z,-PR,PR);
     if(offset.length()>PR) offset.setLength(PR);
     camera.position.copy(offset);
+    camera.up.set(0,1,0);
     camera.lookAt(sphDir(yaw,pitch).add(offset));
-    drawHot();
+    camera.updateMatrixWorld(true);
+    if(hotspotsReady) drawHot();
   }
-  function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+  function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();camera.updateMatrixWorld(true);}
+  async function settleView(){
+    resize(); apply();
+    renderer.render(scene3,camera);
+    await new Promise(r=>requestAnimationFrame(r));
+    resize(); apply();
+    renderer.render(scene3,camera);
+    await new Promise(r=>requestAnimationFrame(r));
+    camera.updateMatrixWorld(true);
+  }
   async function loadScene(s, opts){
     try{
+      // Hide icons first — show only after texture + initial view settled
+      clearPins();
       active=s;
       yaw=s.initialView.yaw; pitch=s.initialView.pitch;
-      fov = FOV_MAX;
+      const ivFov = s.initialView && typeof s.initialView.fov === 'number' ? s.initialView.fov : FOV_MAX;
+      fov = clamp(ivFov, FOV_MIN, FOV_MAX);
       offset.set(0,0,0);
       const url = resolveUrl(s);
       const tex = await loader.loadAsync(url);
@@ -200,16 +290,19 @@ function buildViewerHtml(project: ProjectDocument): string {
       if(mat.map) mat.map.dispose();
       mat.map=tex; mat.color.set(0xffffff); mat.needsUpdate=true;
       [...scenesEl.querySelectorAll('button')].forEach(b=>b.classList.toggle('active', b.dataset.id===s.id));
-      apply();
+      await settleView();
+      hotspotsReady = true;
+      drawHot();
       errEl.style.display='none';
     }catch(e){
       showErr('無法載入全景：'+(e&&e.message?e.message:e)+' · '+((s&&s.source&&s.source.url)||''));
+      hotspotsReady = true;
     }
   }
   async function goSceneFromHotspot(h){
     const tgt=project.scenes.find(s=>s.id===h.targetSceneId);
     if(!tgt) return;
-    // zoom toward icon ~30% then fade via opacity on canvas parent
+    clearPins(); // hide old icons immediately
     const startFov=fov, endFov=clamp(startFov*0.7, FOV_MIN, FOV_MAX);
     const y0=yaw,p0=pitch, t0=performance.now();
     await new Promise(res=>{
@@ -227,32 +320,62 @@ function buildViewerHtml(project: ProjectDocument): string {
     canvas.style.opacity='1';
   }
   function projectToScreen(y,p){
-    const dir=sphDir(y,p).multiplyScalar(sphereR*0.98);
-    const v=dir.project(camera);
-    if(v.z>=1) return null;
-    return {x:(v.x*0.5+0.5)*innerWidth, y:(-v.y*0.5+0.5)*innerHeight};
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+    const world=sphDir(y,p).multiplyScalar(sphereR*0.98);
+    const v=world.clone().project(camera);
+    if(v.z>=1 || v.x<-1.3 || v.x>1.3 || v.y<-1.3 || v.y>1.3) return null;
+    const br=canvas.getBoundingClientRect();
+    const w=Math.max(1,br.width||innerWidth), h=Math.max(1,br.height||innerHeight);
+    return {x:(v.x*0.5+0.5)*w, y:(-v.y*0.5+0.5)*h};
   }
-  function drawHot(){
-    hotRoot.innerHTML='';
-    if(!active) return;
+  // Keep pin DOM stable (do not rebuild every frame — that broke click on scene links)
+  let pinSceneId = null;
+  const pinEls = new Map();
+  function ensurePins(){
+    if(!hotspotsReady || !active){ if(hotRoot.childElementCount) { hotRoot.innerHTML=''; pinEls.clear(); pinSceneId=null; } return; }
+    if(pinSceneId === active.id && pinEls.size === active.hotspots.length) return;
+    hotRoot.innerHTML=''; pinEls.clear(); pinSceneId = active.id;
     for(const h of active.hotspots){
-      const scr=projectToScreen(h.yaw,h.pitch); if(!scr) continue;
       const el=document.createElement('div');
       el.className='pin '+h.type;
-      el.style.left=scr.x+'px'; el.style.top=scr.y+'px';
+      el.dataset.hid=h.id;
+      el.style.display='none';
       el.innerHTML='<div class="glyph">'+(h.type==='info'?ICON_I:ICON_S)+'</div><div class="lbl"></div><div class="tip"></div>';
       const lbl=el.querySelector('.lbl'), tip=el.querySelector('.tip');
       if(h.type==='info'){
-        lbl.textContent=h.title||'注解';
-        tip.innerHTML='<strong>'+esc(h.title)+'</strong><div>'+esc(h.text)+'</div>';
-        el.onclick=()=>el.classList.toggle('open');
+        const t0=String(h.title||'').trim(), tx=String(h.text||'').trim();
+        lbl.textContent=t0;
+        if(t0 || tx){
+          el.classList.add('has-content');
+          tip.innerHTML=(t0?'<strong>'+esc(t0)+'</strong>':'')+(tx?'<div>'+esc(tx)+'</div>':'');
+        } else {
+          tip.innerHTML='';
+        }
       } else {
         const tgt=project.scenes.find(s=>s.id===h.targetSceneId);
         lbl.textContent=tgt?('→ '+tgt.name):'場景';
-        tip.textContent=tgt?tgt.name:'場景';
-        el.onclick=()=>{ if(tgt) goSceneFromHotspot(h); };
+        tip.innerHTML='';
+        el.addEventListener('click', (ev)=>{
+          ev.preventDefault(); ev.stopPropagation();
+          autorotate=false; btnAuto.classList.remove('on');
+          if(tgt) void goSceneFromHotspot(h);
+        });
       }
       hotRoot.appendChild(el);
+      pinEls.set(h.id, el);
+    }
+  }
+  function drawHot(){
+    if(!hotspotsReady) return;
+    ensurePins();
+    if(!active) return;
+    for(const h of active.hotspots){
+      const el=pinEls.get(h.id); if(!el) continue;
+      const scr=projectToScreen(h.yaw,h.pitch);
+      if(!scr){ el.style.display='none'; continue; }
+      el.style.left=scr.x+'px'; el.style.top=scr.y+'px';
+      el.style.display='block';
     }
   }
   function esc(s){return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
@@ -306,6 +429,200 @@ function buildViewerHtml(project: ProjectDocument): string {
     renderer.render(scene3,camera); requestAnimationFrame(loop);
   }
   resize(); if(active) loadScene(active); loop();
+
+  /* ---- OCR: button → box select → recognize eng+chi_tra → popup near cursor ---- */
+  const btnOcr=document.getElementById('btn-ocr');
+  const ocrLayer=document.getElementById('ocr-layer');
+  const ocrBox=document.getElementById('ocr-box');
+  const ocrHint=document.getElementById('ocr-hint');
+  const ocrPop=document.getElementById('ocr-pop');
+  const ocrText=document.getElementById('ocr-text');
+  let ocrMode=false, ocrDrag=false, ocrX0=0, ocrY0=0, ocrWorker=null, ocrBusy=false;
+  function setOcrMode(on){
+    ocrMode=!!on;
+    btnOcr.classList.toggle('on', ocrMode);
+    ocrLayer.classList.toggle('on', ocrMode);
+    ocrHint.style.display=ocrMode?'block':'none';
+    ocrBox.style.display='none';
+    // Do NOT hide #ocr-pop here — result popup must stay after selection ends
+  }
+  function placeOcrPop(x,y){
+    ocrPop.style.display='block';
+    ocrPop.style.visibility='visible';
+    ocrPop.style.zIndex='40';
+    // measure after visible
+    const pad=12;
+    requestAnimationFrame(()=>{
+      const w=ocrPop.offsetWidth||280, h=ocrPop.offsetHeight||80;
+      let left=x+14, top=y+14;
+      if(left+w>innerWidth-pad) left=Math.max(pad, x-w-14);
+      if(top+h>innerHeight-pad) top=Math.max(pad, y-h-14);
+      ocrPop.style.left=left+'px'; ocrPop.style.top=top+'px';
+    });
+    ocrPop.style.left=(x+14)+'px'; ocrPop.style.top=(y+14)+'px';
+  }
+  function ocrBaseUrl(){
+    // index.html lives in site/S/R/D/ → vendor/tesseract next to it
+    return new URL('vendor/tesseract/', location.href).href;
+  }
+  async function ensureTesseractLib(){
+    const g=typeof window!=='undefined'?window:self;
+    if(g.Tesseract && g.Tesseract.createWorker) return g.Tesseract;
+    const base=ocrBaseUrl();
+    const mainJs=base+'tesseract.min.js';
+    let code='';
+    try{
+      const res=await fetch(mainJs, {cache:'no-store'});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      code=await res.text();
+      if(code.length<1000) throw new Error('file too small ('+code.length+')');
+    }catch(e){
+      throw new Error(
+        '找不到 OCR 腳本：'+mainJs+
+        '\\n請重新用最新 Editor 匯出 ZIP，解壓後必須有：\\n'+
+        '  .../vendor/tesseract/tesseract.min.js\\n'+
+        '  .../vendor/tesseract/worker.min.js\\n'+
+        '  .../vendor/tesseract/tesseract-core-simd.wasm.js\\n'+
+        '  .../vendor/tesseract/eng.traineddata\\n'+
+        '  .../vendor/tesseract/chi_tra.traineddata\\n'+
+        '詳情：'+(e&&e.message?e.message:e)
+      );
+    }
+    // Execute UMD build in global scope (sets window.Tesseract)
+    try{
+      (0, eval)(code);
+    }catch(e){
+      // fallback: classic script tag
+      await new Promise(function(resolve,reject){
+        const s=document.createElement('script');
+        s.src=mainJs;
+        s.onload=function(){ resolve(); };
+        s.onerror=function(){ reject(new Error('script tag failed: '+mainJs)); };
+        document.head.appendChild(s);
+      });
+    }
+    if(!(g.Tesseract && g.Tesseract.createWorker)){
+      throw new Error('tesseract.min.js 已取得但 window.Tesseract 不存在');
+    }
+    return g.Tesseract;
+  }
+  async function ensureOcrWorker(){
+    if(ocrWorker) return ocrWorker;
+    const Tesseract=await ensureTesseractLib();
+    const base=ocrBaseUrl();
+    const langPath=base.endsWith('/')?base.slice(0,-1):base;
+    ocrText.textContent='載入 OCR 引擎（首次較慢，約 11MB）…';
+    // Verify lang files exist
+    for (const f of ['eng.traineddata','chi_tra.traineddata','worker.min.js','tesseract-core-simd.wasm.js']){
+      const u=base+f;
+      const r=await fetch(u,{method:'GET',cache:'no-store'});
+      if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
+    }
+    ocrWorker=await Tesseract.createWorker(['eng','chi_tra'], 1, {
+      workerPath: base+'worker.min.js',
+      langPath: langPath,
+      corePath: base+'tesseract-core-simd.wasm.js',
+      workerBlobURL: false,
+      logger: function(){},
+    });
+    return ocrWorker;
+  }
+  async function runOcrOnRect(rx,ry,rw,rh, clientX, clientY){
+    if(ocrBusy) return;
+    if(rw<8||rh<8){
+      ocrText.textContent='框太小，請再拖大一點。';
+      placeOcrPop(clientX, clientY);
+      setOcrMode(false);
+      return;
+    }
+    ocrBusy=true;
+    btnOcr.disabled=true;
+    ocrText.textContent='識別中…';
+    placeOcrPop(clientX, clientY);
+    // exit select mode but keep popup visible
+    setOcrMode(false);
+    try{
+      // Capture WebGL pixels (preserveDrawingBuffer must be true)
+      renderer.render(scene3,camera);
+      const full=document.createElement('canvas');
+      full.width=canvas.width; full.height=canvas.height;
+      const fctx=full.getContext('2d',{willReadFrequently:true});
+      fctx.drawImage(canvas,0,0);
+      // Detect blank capture (common if preserveDrawingBuffer missing)
+      try{
+        const sample=fctx.getImageData(Math.floor(full.width/2), Math.floor(full.height/2), 1, 1).data;
+        const blank=sample[0]<2&&sample[1]<2&&sample[2]<2;
+        if(blank){
+          // retry one more render
+          renderer.render(scene3,camera);
+          fctx.drawImage(canvas,0,0);
+        }
+      }catch(_e){}
+      const scaleX=canvas.width/Math.max(1,innerWidth), scaleY=canvas.height/Math.max(1,innerHeight);
+      const sx=Math.max(0,Math.floor(rx*scaleX));
+      const sy=Math.max(0,Math.floor(ry*scaleY));
+      const sw=Math.max(1,Math.min(full.width-sx, Math.floor(rw*scaleX)));
+      const sh=Math.max(1,Math.min(full.height-sy, Math.floor(rh*scaleY)));
+      const crop=document.createElement('canvas');
+      crop.width=sw; crop.height=sh;
+      crop.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
+      const worker=await ensureOcrWorker();
+      ocrText.textContent='識別中（中/英）…';
+      placeOcrPop(clientX, clientY);
+      const res=await worker.recognize(crop);
+      const text=(res&&res.data&&res.data.text?res.data.text:'').trim();
+      ocrText.textContent=text||'（未能識別文字，請框選更清晰／更大的字）';
+      placeOcrPop(clientX, clientY);
+    }catch(e){
+      ocrText.textContent='識別失敗：'+(e&&e.message?e.message:String(e));
+      placeOcrPop(clientX, clientY);
+      console.error('[OCR]', e);
+    }finally{
+      ocrBusy=false;
+      btnOcr.disabled=false;
+    }
+  }
+  btnOcr.onclick=function(){
+    if(ocrBusy) return;
+    if(ocrMode){ setOcrMode(false); return; }
+    setOcrMode(true);
+  };
+  document.getElementById('ocr-close').onclick=()=>{ ocrPop.style.display='none'; };
+  document.getElementById('ocr-copy').onclick=async()=>{
+    try{ await navigator.clipboard.writeText(ocrText.textContent||''); }catch(e){}
+  };
+  ocrLayer.addEventListener('pointerdown',e=>{
+    if(!ocrMode||ocrBusy) return;
+    e.preventDefault();
+    ocrDrag=true; ocrX0=e.clientX; ocrY0=e.clientY;
+    ocrBox.style.display='block';
+    ocrBox.style.left=ocrX0+'px'; ocrBox.style.top=ocrY0+'px';
+    ocrBox.style.width='0px'; ocrBox.style.height='0px';
+    try{ ocrLayer.setPointerCapture(e.pointerId); }catch(_e){}
+  });
+  ocrLayer.addEventListener('pointermove',e=>{
+    if(!ocrDrag) return;
+    const x1=e.clientX, y1=e.clientY;
+    const l=Math.min(ocrX0,x1), t=Math.min(ocrY0,y1);
+    const w=Math.abs(x1-ocrX0), h=Math.abs(y1-ocrY0);
+    ocrBox.style.left=l+'px'; ocrBox.style.top=t+'px';
+    ocrBox.style.width=w+'px'; ocrBox.style.height=h+'px';
+  });
+  ocrLayer.addEventListener('pointerup',e=>{
+    if(!ocrDrag) return;
+    ocrDrag=false;
+    const x1=e.clientX, y1=e.clientY;
+    const l=Math.min(ocrX0,x1), t=Math.min(ocrY0,y1);
+    const w=Math.abs(x1-ocrX0), h=Math.abs(y1-ocrY0);
+    ocrBox.style.display='none';
+    void runOcrOnRect(l,t,w,h, x1, y1);
+  });
+  addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+      if(ocrMode) setOcrMode(false);
+      else ocrPop.style.display='none';
+    }
+  });
   </script>
 </body>
 </html>`;
@@ -364,9 +681,17 @@ export async function buildProjectZip(
     project: viewerProject,
   };
 
-  onProgress?.(5, '準備 three.js');
+  onProgress?.(4, '準備 three.js');
   const threeFiles = await fetchVendorThreeFiles();
   addThreeVendorToZip(zip, threeFiles, `${prefix}/vendor/`);
+
+  onProgress?.(8, '準備 OCR（中英）');
+  {
+    const ocrFiles = await fetchVendorOcrFiles();
+    addOcrVendorToZip(zip, ocrFiles, `${prefix}/vendor/tesseract/`);
+    const bytes = Object.values(ocrFiles).reduce((n, b) => n + b.byteLength, 0);
+    console.info('[export] OCR packed', (bytes / 1024 / 1024).toFixed(2), 'MB →', `${prefix}/vendor/tesseract/`);
+  }
 
   const withData = project.scenes.filter((s) => s.source.dataUrl);
   const n = Math.max(withData.length, 1);
@@ -377,7 +702,7 @@ export async function buildProjectZip(
     const rel = `assets/source/${s.id}_${s.source.fileName}`;
     zip.file(`${prefix}/${rel}`, bytes);
     i += 1;
-    onProgress?.(5 + Math.round((i / n) * 65), '打包圖片');
+    onProgress?.(10 + Math.round((i / n) * 70), '打包圖片');
   }
 
   zip.file(`${prefix}/project.json`, JSON.stringify(pkg, null, 2));
@@ -390,13 +715,16 @@ export async function buildProjectZip(
   site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
     index.html
     project.json
-    vendor/
+    vendor/              (three.js + tesseract OCR 中英)
     assets/source/
 
 使用方式：
 1) 解壓到網站根目錄（例如 C:\\inetpub\\wwwroot）
 2) 瀏覽器開啟：http://{host}/site/{SITE}/{ROOM}/{DATE}/
-3) 若要繼續編輯：在 Editor 選擇「開啟專案套件」載入本 ZIP
+3) Viewer「識別文字」：框選畫面文字 → 游標旁顯示 OCR 結果（中/英）
+4) 若要繼續編輯：Editor「開啟 ZIP」載入本套件
+
+注意：OCR 離線檔約 +11MB（每次 ZIP 都帶，方便完全離線）
 `
   );
   onProgress?.(75, '壓縮中');

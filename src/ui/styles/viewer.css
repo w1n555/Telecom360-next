@@ -89,7 +89,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 2;
+  z-index: 6;
 }
 
 .viewer-stage .hotspot-pin {
@@ -97,6 +97,7 @@
   transform: translate(-50%, -50%);
   pointer-events: auto;
   cursor: pointer;
+  z-index: 7;
 }
 
 .viewer-stage .hotspot-pin .glyph {
@@ -153,6 +154,50 @@
   text-overflow: ellipsis;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.viewer-stage .hotspot-pin .pin-label:empty,
+.viewer-stage .hotspot-pin .pin-label[hidden] {
+  display: none;
+}
+
+/* Hover detail for info hotspots (only when title/text filled) */
+.viewer-stage .hotspot-pin .pin-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  display: none;
+  min-width: 140px;
+  max-width: 280px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.97);
+  color: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.viewer-stage .hotspot-pin .pin-tip strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.viewer-stage .hotspot-pin .pin-tip p {
+  margin: 0;
+}
+
+.viewer-stage .hotspot-pin.has-content:hover .pin-tip,
+.viewer-stage .hotspot-pin.has-content:focus-within .pin-tip {
+  display: block;
 }
 
 @keyframes hotspot-pulse {

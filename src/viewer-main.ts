@@ -7,6 +7,8 @@ import {
   type ProjectDocument,
   type ProjectPackage,
   type SceneHotspot,
+  type InfoHotspot,
+  type ViewParams,
 } from './core/types/project';
 import { t } from './core/i18n/zh-Hant';
 
@@ -68,7 +70,6 @@ async function main() {
   const btnAuto = root.querySelector('#v-auto') as HTMLButtonElement;
   const btnFs = root.querySelector('#v-fs') as HTMLButtonElement;
 
-  // Viewer defaults: 3D always on; autorotate button present but OFF; fullscreen always available
   const settings = {
     ...defaultSettings(),
     ...project.settings,
@@ -81,85 +82,146 @@ async function main() {
   stage.appendChild(hotLayer);
 
   let activeId = project.scenes[0]?.id ?? null;
+  let pinSceneId: string | null = null;
+  const pinEls = new Map<string, HTMLElement>();
+  let switching = false;
+  /** Icons only after texture + settleView */
+  let hotspotsReady = false;
+
+  const clearPins = () => {
+    hotspotsReady = false;
+    pinSceneId = null;
+    pinEls.clear();
+    hotLayer.innerHTML = '';
+  };
+
+  const sceneView = (scene: { initialView: ViewParams }): ViewParams => ({
+    yaw: scene.initialView.yaw,
+    pitch: scene.initialView.pitch,
+    fov: typeof scene.initialView.fov === 'number' ? scene.initialView.fov : FOV_MAX,
+  });
 
   const renderSceneButtons = () => {
     scenesEl.innerHTML = project.scenes
-      .map((s) => `<button type="button" data-id="${s.id}" class="${s.id === activeId ? 'active' : ''}">${s.name}</button>`)
+      .map((s) => `<button type="button" data-id="${s.id}" class="${s.id === activeId ? 'active' : ''}">${escapeHtml(s.name)}</button>`)
       .join('');
     scenesEl.querySelectorAll('button').forEach((b) => {
       b.addEventListener('click', () => void switchScene((b as HTMLElement).dataset.id!));
     });
   };
 
-  const drawHot = () => {
+  const ensurePins = () => {
+    if (!hotspotsReady) {
+      if (hotLayer.childElementCount) clearPins();
+      return;
+    }
     const scene = project.scenes.find((s) => s.id === activeId);
+    if (!scene) {
+      clearPins();
+      return;
+    }
+    if (pinSceneId === scene.id && pinEls.size === scene.hotspots.length) return;
     hotLayer.innerHTML = '';
-    if (!scene) return;
+    pinEls.clear();
+    pinSceneId = scene.id;
     for (const h of scene.hotspots) {
-      const scr = engine.projectToScreen(h.yaw, h.pitch);
-      if (!scr.visible) continue;
       const el = document.createElement('div');
       el.className = `hotspot-pin ${h.type}`;
-      el.style.left = `${scr.x}px`;
-      el.style.top = `${scr.y}px`;
-      const label =
-        h.type === 'info'
-          ? h.title || '注解'
-          : (() => {
-              const tgt = project.scenes.find((s) => s.id === (h as SceneHotspot).targetSceneId);
-              return tgt ? `→ ${tgt.name}` : '場景';
-            })();
-      el.innerHTML = `<div class="glyph">${h.type === 'info' ? ICON_INFO : ICON_SCENE}</div><div class="pin-label">${label}</div>`;
+      el.dataset.id = h.id;
       el.style.pointerEvents = 'auto';
+      el.style.display = 'none'; // position first, then show
       if (h.type === 'info') {
+        const info = h as InfoHotspot;
+        const t0 = (info.title || '').trim();
+        const tx = (info.text || '').trim();
+        const has = Boolean(t0 || tx);
+        el.innerHTML = `<div class="glyph">${ICON_INFO}</div><div class="pin-label"></div><div class="pin-tip"></div>`;
+        const lbl = el.querySelector('.pin-label') as HTMLElement;
+        const tip = el.querySelector('.pin-tip') as HTMLElement;
+        lbl.textContent = t0;
+        lbl.hidden = !t0;
+        if (has) {
+          el.classList.add('has-content');
+          tip.innerHTML = `${t0 ? `<strong>${escapeHtml(t0)}</strong>` : ''}${tx ? `<p>${escapeHtml(tx)}</p>` : ''}`;
+        }
+      } else {
+        const sh = h as SceneHotspot;
+        const tgt = project.scenes.find((s) => s.id === sh.targetSceneId);
+        el.innerHTML = `<div class="glyph">${ICON_SCENE}</div><div class="pin-label"></div>`;
+        const lbl = el.querySelector('.pin-label') as HTMLElement;
+        lbl.textContent = tgt ? `→ ${tgt.name}` : '場景';
         el.addEventListener('click', (ev) => {
+          ev.preventDefault();
           ev.stopPropagation();
+          if (!tgt || switching) return;
           engine.interruptAutorotate();
           btnAuto.classList.remove('on');
-          // simple in-page tip instead of alert
-          const tip = document.createElement('div');
-          tip.className = 'viewer-info-pop';
-          tip.innerHTML = `<strong>${escapeHtml(h.title)}</strong><p>${escapeHtml(h.text)}</p><button type="button">關閉</button>`;
-          tip.style.cssText =
-            'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;background:#0f172a;padding:16px;border-radius:12px;max-width:360px;color:#fff;box-shadow:0 8px 32px rgba(0,0,0,.5)';
-          tip.querySelector('button')!.onclick = () => tip.remove();
-          document.body.appendChild(tip);
-        });
-      } else {
-        el.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          void switchScene((h as SceneHotspot).targetSceneId, h as SceneHotspot);
+          void switchScene(tgt.id, sh);
         });
       }
       hotLayer.appendChild(el);
+      pinEls.set(h.id, el);
+    }
+  };
+
+  const drawHot = () => {
+    if (!hotspotsReady) return;
+    ensurePins();
+    const scene = project.scenes.find((s) => s.id === activeId);
+    if (!scene) return;
+    for (const h of scene.hotspots) {
+      const el = pinEls.get(h.id);
+      if (!el) continue;
+      const scr = engine.projectToScreen(h.yaw, h.pitch);
+      if (!scr.visible) {
+        el.style.display = 'none';
+        continue;
+      }
+      el.style.left = `${scr.x}px`;
+      el.style.top = `${scr.y}px`;
+      el.style.display = 'block';
     }
   };
 
   async function switchScene(id: string, fromHotspot?: SceneHotspot) {
+    if (switching) return;
     const scene = project.scenes.find((s) => s.id === id);
     if (!scene) return;
-    engine.interruptAutorotate();
-    btnAuto.classList.remove('on');
-    const canvas = engine.renderer.domElement;
-    if (fromHotspot) {
-      await engine.aimAndZoomIn(fromHotspot.yaw, fromHotspot.pitch, 380);
-      canvas.style.transition = 'opacity 0.35s ease';
-      canvas.style.opacity = '0';
-      await new Promise((r) => setTimeout(r, 350));
-      await engine.transitionToUrl(scene.source.url, 400);
-      canvas.style.opacity = '1';
-    } else if (activeId && activeId !== id) {
-      canvas.style.transition = 'opacity 0.3s ease';
-      canvas.style.opacity = '0';
-      await new Promise((r) => setTimeout(r, 280));
-      await engine.loadTextureFromUrl(scene.source.url);
-      canvas.style.opacity = '1';
-    } else {
-      await engine.loadTextureFromUrl(scene.source.url);
+    switching = true;
+    // Hide icons immediately (before fade / zoom)
+    clearPins();
+    try {
+      engine.interruptAutorotate();
+      btnAuto.classList.remove('on');
+      const canvas = engine.renderer.domElement;
+      if (fromHotspot) {
+        await engine.aimAndZoomIn(fromHotspot.yaw, fromHotspot.pitch, 380);
+        canvas.style.transition = 'opacity 0.35s ease';
+        canvas.style.opacity = '0';
+        await new Promise((r) => setTimeout(r, 350));
+        await engine.transitionToUrl(scene.source.url, 400);
+        canvas.style.opacity = '1';
+      } else if (activeId && activeId !== id) {
+        canvas.style.transition = 'opacity 0.3s ease';
+        canvas.style.opacity = '0';
+        await new Promise((r) => setTimeout(r, 280));
+        await engine.loadTextureFromUrl(scene.source.url);
+        canvas.style.opacity = '1';
+      } else {
+        await engine.loadTextureFromUrl(scene.source.url);
+      }
+      activeId = id;
+      const iv = sceneView(scene);
+      // Image ready → settle camera to initial view → then show icons
+      await engine.settleView(iv);
+      renderSceneButtons();
+      if (activeId === id) {
+        hotspotsReady = true;
+        drawHot();
+      }
+    } finally {
+      switching = false;
     }
-    activeId = id;
-    engine.setView({ yaw: scene.initialView.yaw, pitch: scene.initialView.pitch, fov: FOV_MAX }, true);
-    renderSceneButtons();
   }
 
   btnAuto.addEventListener('click', () => {
