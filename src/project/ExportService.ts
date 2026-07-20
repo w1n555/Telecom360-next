@@ -82,66 +82,6 @@ function addThreeVendorToZip(zip: JSZip, files: { module: Uint8Array; core: Uint
   zip.file(`${prefix}three.core.js`, files.core);
 }
 
-/**
- * Offline OCR (tesseract.js v7):
- * - full tessdata eng + chi_tra
- * - LSTM cores for SIMD / relaxed-SIMD / baseline (OEM LSTM_ONLY)
- */
-const OCR_VENDOR_FILES = [
-  'tesseract.min.js',
-  'worker.min.js',
-  'tesseract-core-lstm.wasm.js',
-  'tesseract-core-simd-lstm.wasm.js',
-  'tesseract-core-relaxedsimd-lstm.wasm.js',
-  'eng.traineddata',
-  'chi_tra.traineddata',
-] as const;
-
-async function fetchVendorOcrFiles(): Promise<Record<string, Uint8Array>> {
-  // Prefer paths relative to this module (dist/assets/main-*.js → ../vendor/tesseract/)
-  // plus absolute site-root /vendor/tesseract/ (IIS / Vite public)
-  const baseCandidates: string[] = [];
-  try {
-    baseCandidates.push(new URL('../vendor/tesseract/', import.meta.url).href);
-  } catch {
-    /* ignore */
-  }
-  baseCandidates.push(
-    new URL('/vendor/tesseract/', location.origin).href,
-    `${location.origin}/vendor/tesseract/`,
-    new URL('./vendor/tesseract/', location.href).href
-  );
-  let lastErr: unknown = null;
-  for (const base of baseCandidates) {
-    try {
-      const results = await Promise.all(
-        OCR_VENDOR_FILES.map(async (name) => {
-          const url = new URL(name, base).href;
-          const res = await fetch(url, { cache: 'no-store' });
-          if (!res.ok) throw new Error(`${name} HTTP ${res.status} @ ${url}`);
-          const buf = new Uint8Array(await res.arrayBuffer());
-          if (buf.byteLength < 1000) throw new Error(`${name} too small (${buf.byteLength}) @ ${url}`);
-          return [name, buf] as const;
-        })
-      );
-      console.info('[export] OCR vendor loaded from', base);
-      return Object.fromEntries(results);
-    } catch (e) {
-      lastErr = e;
-      console.warn('[export] OCR vendor candidate failed', base, e);
-    }
-  }
-  throw new Error(
-    `找不到 OCR 離線檔 vendor/tesseract/（需完整 eng + chi_tra）。請確認網站根有 /vendor/tesseract/。詳情：${String((lastErr as Error)?.message || lastErr)}`
-  );
-}
-
-function addOcrVendorToZip(zip: JSZip, files: Record<string, Uint8Array>, prefix = 'vendor/tesseract/') {
-  for (const name of OCR_VENDOR_FILES) {
-    if (files[name]) zip.file(`${prefix}${name}`, files[name]);
-  }
-}
-
 function buildViewerHtml(project: ProjectDocument): string {
   // Always strip dataUrls from inline PKG — images load from assets/source/*.jpg
   const slim = projectForViewer(project);
@@ -171,22 +111,6 @@ function buildViewerHtml(project: ProjectDocument): string {
     #tools{display:flex;gap:6px;flex-wrap:wrap}
     #tools button{border:0;border-radius:8px;padding:8px 10px;background:#1e293b;color:#fff;cursor:pointer;font-weight:600;font-size:12px}
     #tools button.on{background:#00a1e0}
-    #ocr-layer{position:fixed;inset:0;z-index:20;display:none;cursor:crosshair;touch-action:none}
-    #ocr-layer.on{display:block}
-    #ocr-box{position:absolute;border:2px solid #00a1e0;background:rgba(0,161,224,.15);pointer-events:none;display:none}
-    #ocr-pop{position:fixed;z-index:30;max-width:min(360px,80vw);min-width:220px;background:rgba(15,23,42,.97);color:#f8fafc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;box-shadow:0 8px 28px rgba(0,0,0,.55);display:none;white-space:pre-wrap;word-break:break-word;pointer-events:auto}
-    #ocr-pop .ocr-hd{font-size:11px;color:#94a3b8;margin-bottom:6px;font-weight:600}
-    #ocr-pop .ocr-bd{user-select:text}
-    #ocr-pop .ocr-prog{margin:8px 0 4px;display:none}
-    #ocr-pop .ocr-prog.on{display:block}
-    #ocr-pop .ocr-prog-lbl{font-size:12px;color:#cbd5e1;margin-bottom:6px;font-weight:600}
-    #ocr-pop .ocr-prog-track{height:8px;border-radius:999px;background:#1e293b;overflow:hidden}
-    #ocr-pop .ocr-prog-bar{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#003f91,#00a1e0);transition:width .12s ease-out}
-    #ocr-pop .ocr-prog-pct{font-size:11px;color:#94a3b8;text-align:right;margin-top:4px}
-    #ocr-pop .ocr-act{margin-top:8px;display:flex;gap:8px}
-    #ocr-pop button{border:0;border-radius:8px;padding:6px 10px;background:#1e293b;color:#fff;cursor:pointer;font-size:12px;font-weight:600}
-    #ocr-pop button.primary{background:#00a1e0}
-    #ocr-hint{position:fixed;left:50%;top:56px;transform:translateX(-50%);z-index:25;background:rgba(0,63,145,.95);color:#fff;padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;display:none;pointer-events:none}
     #hot{position:fixed;inset:0;pointer-events:none;z-index:5}
     .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;z-index:6}
     .pin .glyph{width:40px;height:40px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 12px rgba(0,0,0,.5);display:grid;place-items:center;position:relative;color:#fff}
@@ -209,21 +133,8 @@ function buildViewerHtml(project: ProjectDocument): string {
     <div id="tools">
       <button type="button" id="btn-auto">自動旋轉</button>
       <button type="button" id="btn-fs">全螢幕</button>
-      <button type="button" id="btn-ocr" title="框選畫面文字進行識別">識別文字</button>
     </div>
     <div id="scenes"></div>
-  </div>
-  <div id="ocr-layer"><div id="ocr-box"></div></div>
-  <div id="ocr-hint">拖曳框選要讀的文字，Esc 取消</div>
-  <div id="ocr-pop">
-    <div class="ocr-hd" id="ocr-hd">識別結果</div>
-    <div class="ocr-bd" id="ocr-text"></div>
-    <div class="ocr-prog" id="ocr-prog">
-      <div class="ocr-prog-lbl" id="ocr-prog-lbl">載入中…</div>
-      <div class="ocr-prog-track"><div class="ocr-prog-bar" id="ocr-prog-bar"></div></div>
-      <div class="ocr-prog-pct" id="ocr-prog-pct">0%</div>
-    </div>
-    <div class="ocr-act"><button type="button" class="primary" id="ocr-copy">複製</button><button type="button" id="ocr-close">關閉</button></div>
   </div>
   <script type="importmap">
   {"imports":{"three":"./vendor/three.module.js"}}
@@ -242,8 +153,7 @@ function buildViewerHtml(project: ProjectDocument): string {
   document.body.appendChild(errEl);
   function showErr(m){ errEl.style.display='block'; errEl.textContent=m; console.error(m); }
   titleEl.textContent = project.name;
-  // preserveDrawingBuffer: required so OCR can capture the WebGL canvas (otherwise drawImage is blank)
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene3 = new THREE.Scene();
@@ -450,354 +360,6 @@ function buildViewerHtml(project: ProjectDocument): string {
     renderer.render(scene3,camera); requestAnimationFrame(loop);
   }
   resize(); if(active) loadScene(active); loop();
-
-  /* ---- OCR: box select → full tessdata chi_tra+eng → popup ---- */
-  const btnOcr=document.getElementById('btn-ocr');
-  const ocrLayer=document.getElementById('ocr-layer');
-  const ocrBox=document.getElementById('ocr-box');
-  const ocrHint=document.getElementById('ocr-hint');
-  const ocrPop=document.getElementById('ocr-pop');
-  const ocrText=document.getElementById('ocr-text');
-  const ocrProg=document.getElementById('ocr-prog');
-  const ocrProgLbl=document.getElementById('ocr-prog-lbl');
-  const ocrProgBar=document.getElementById('ocr-prog-bar');
-  const ocrProgPct=document.getElementById('ocr-prog-pct');
-  const ocrHd=document.getElementById('ocr-hd');
-  let ocrMode=false, ocrDrag=false, ocrX0=0, ocrY0=0, ocrWorker=null, ocrBusy=false;
-  function setOcrMode(on){
-    ocrMode=!!on;
-    btnOcr.classList.toggle('on', ocrMode);
-    ocrLayer.classList.toggle('on', ocrMode);
-    ocrHint.style.display=ocrMode?'block':'none';
-    ocrBox.style.display='none';
-    // Do NOT hide #ocr-pop here — result popup must stay after selection ends
-  }
-  function setOcrProgress(pct, label){
-    const p=Math.max(0, Math.min(100, Math.round(pct)));
-    if(ocrProg) ocrProg.classList.add('on');
-    if(ocrProgBar) ocrProgBar.style.width=p+'%';
-    if(ocrProgPct) ocrProgPct.textContent=p+'%';
-    if(ocrProgLbl && label) ocrProgLbl.textContent=label;
-    if(ocrHd) ocrHd.textContent='載入 OCR';
-    if(ocrText) ocrText.textContent='';
-  }
-  function hideOcrProgress(){
-    if(ocrProg) ocrProg.classList.remove('on');
-    if(ocrProgBar) ocrProgBar.style.width='0%';
-    if(ocrProgPct) ocrProgPct.textContent='0%';
-    if(ocrHd) ocrHd.textContent='識別結果';
-  }
-  function placeOcrPop(x,y){
-    ocrPop.style.display='block';
-    ocrPop.style.visibility='visible';
-    ocrPop.style.zIndex='40';
-    const pad=12;
-    requestAnimationFrame(()=>{
-      const w=ocrPop.offsetWidth||280, h=ocrPop.offsetHeight||80;
-      let left=x+14, top=y+14;
-      if(left+w>innerWidth-pad) left=Math.max(pad, x-w-14);
-      if(top+h>innerHeight-pad) top=Math.max(pad, y-h-14);
-      ocrPop.style.left=left+'px'; ocrPop.style.top=top+'px';
-    });
-    ocrPop.style.left=(x+14)+'px'; ocrPop.style.top=(y+14)+'px';
-  }
-  function ocrBaseUrl(){
-    // index.html lives in site/S/R/D/ → vendor/tesseract next to it
-    return new URL('vendor/tesseract/', location.href).href;
-  }
-  function mapOcrStatus(status){
-    const s=String(status||'');
-    if(/loading tesseract core/i.test(s)) return '載入核心…';
-    if(/initializing tesseract/i.test(s)) return '初始化引擎…';
-    if(/loading language/i.test(s)) return '載入語言包（繁中+英，較大）…';
-    if(/initializing api/i.test(s)) return '準備識別 API…';
-    if(/recognizing text/i.test(s)) return '識別文字中…';
-    return s || '處理中…';
-  }
-  async function ensureTesseractLib(onPct){
-    const g=typeof window!=='undefined'?window:self;
-    if(g.Tesseract && g.Tesseract.createWorker) return g.Tesseract;
-    const base=ocrBaseUrl();
-    const mainJs=base+'tesseract.min.js';
-    onPct && onPct(5, '下載 OCR 腳本…');
-    let code='';
-    try{
-      const res=await fetch(mainJs, {cache:'no-store'});
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      code=await res.text();
-      if(code.length<1000) throw new Error('file too small ('+code.length+')');
-    }catch(e){
-      throw new Error(
-        '找不到 OCR 腳本：'+mainJs+
-        '\\n請重新用最新 Editor 匯出 ZIP，解壓後 vendor/tesseract/ 需有 tesseract.js v7 + eng/chi_tra 完整語言包。\\n'+
-        '詳情：'+(e&&e.message?e.message:e)
-      );
-    }
-    onPct && onPct(12, '初始化 OCR 庫…');
-    try{
-      (0, eval)(code);
-    }catch(e){
-      await new Promise(function(resolve,reject){
-        const s=document.createElement('script');
-        s.src=mainJs;
-        s.onload=function(){ resolve(); };
-        s.onerror=function(){ reject(new Error('script tag failed: '+mainJs)); };
-        document.head.appendChild(s);
-      });
-    }
-    if(!(g.Tesseract && g.Tesseract.createWorker)){
-      throw new Error('tesseract.min.js 已取得但 window.Tesseract 不存在');
-    }
-    return g.Tesseract;
-  }
-  async function ensureOcrWorker(onPct){
-    if(ocrWorker) return ocrWorker;
-    const Tesseract=await ensureTesseractLib(onPct);
-    const base=ocrBaseUrl();
-    const langPath=base.endsWith('/')?base.slice(0,-1):base;
-    onPct && onPct(15, '檢查 OCR 檔（tesseract.js v7）…');
-    const need=[
-      'eng.traineddata','chi_tra.traineddata','worker.min.js',
-      'tesseract-core-lstm.wasm.js','tesseract-core-simd-lstm.wasm.js','tesseract-core-relaxedsimd-lstm.wasm.js'
-    ];
-    for (let i=0;i<need.length;i++){
-      const f=need[i];
-      const u=base+f;
-      const r=await fetch(u,{method:'GET',cache:'no-store'});
-      if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
-      onPct && onPct(15 + Math.round(((i+1)/need.length)*10), '檢查：'+f);
-    }
-    // v7: OEM 1 = LSTM_ONLY; corePath = directory → auto-pick simd/relaxedsimd/lstm
-    ocrWorker=await Tesseract.createWorker(['chi_tra','eng'], 1, {
-      workerPath: base+'worker.min.js',
-      langPath: langPath,
-      corePath: base,
-      workerBlobURL: false,
-      gzip: false,
-      logger: function(m){
-        const p = typeof m.progress==='number' ? m.progress : 0;
-        const pct = 25 + Math.round(p * 65);
-        onPct && onPct(pct, mapOcrStatus(m.status));
-      },
-    });
-    await ocrWorker.setParameters({
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '1',
-      user_defined_dpi: '300',
-    });
-    onPct && onPct(92, '引擎就緒');
-    return ocrWorker;
-  }
-  /** Score OCR result: prefer longer CJK + higher confidence */
-  function scoreOcr(data){
-    const text=(data&&data.text?data.text:'').trim();
-    const conf=typeof data.confidence==='number'?data.confidence:0;
-    const cjk=(text.match(/[\\u4e00-\\u9fff]/g)||[]).length;
-    const alnum=text.replace(/\\s/g,'').length;
-    return conf*0.35 + Math.min(alnum,80)*0.4 + Math.min(cjk,40)*1.2;
-  }
-  /**
-   * Upscale + auto-invert + contrast + optional Otsu binary.
-   * Small CJK on panorama crops needs strong upscale.
-   */
-  function preprocessCrop(src, mode){
-    // mode: 'gray' | 'bin'
-    const minW=720, minH=200;
-    const scale=Math.max(4,
-      minW/Math.max(1,src.width),
-      minH/Math.max(1,src.height)
-    );
-    let w=Math.max(1, Math.round(src.width*scale));
-    let h=Math.max(1, Math.round(src.height*scale));
-    // Cap memory: max ~4MP for OCR crop
-    const maxPx=4e6;
-    if(w*h>maxPx){
-      const s=Math.sqrt(maxPx/(w*h));
-      w=Math.max(1,Math.round(w*s));
-      h=Math.max(1,Math.round(h*s));
-    }
-    const out=document.createElement('canvas');
-    out.width=w; out.height=h;
-    const ctx=out.getContext('2d',{willReadFrequently:true});
-    ctx.imageSmoothingEnabled=true;
-    ctx.imageSmoothingQuality='high';
-    ctx.fillStyle='#ffffff';
-    ctx.fillRect(0,0,w,h);
-    ctx.drawImage(src,0,0,w,h);
-    const img=ctx.getImageData(0,0,w,h);
-    const d=img.data;
-    const n=w*h;
-    const gray=new Float32Array(n);
-    let sum=0, min=255, max=0;
-    for(let i=0,p=0;i<d.length;i+=4,p++){
-      const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-      gray[p]=g; sum+=g;
-      if(g<min) min=g;
-      if(g>max) max=g;
-    }
-    const mean=sum/n;
-    // Dark plate / light text → invert so text is dark on white
-    const invert=mean<118;
-    const range=Math.max(8, max-min);
-    // Unsharp-ish: local contrast after stretch
-    for(let p=0;p<n;p++){
-      let g=((gray[p]-min)/range)*255;
-      if(invert) g=255-g;
-      g=(g-128)*1.55+128;
-      gray[p]=Math.max(0,Math.min(255,g));
-    }
-    if(mode==='bin'){
-      // Otsu threshold
-      const hist=new Array(256).fill(0);
-      for(let p=0;p<n;p++) hist[gray[p]|0]++;
-      let sumAll=0; for(let t=0;t<256;t++) sumAll+=t*hist[t];
-      let sumB=0, wB=0, maxVar=-1, thr=128;
-      for(let t=0;t<256;t++){
-        wB+=hist[t]; if(!wB) continue;
-        const wF=n-wB; if(!wF) break;
-        sumB+=t*hist[t];
-        const mB=sumB/wB, mF=(sumAll-sumB)/wF;
-        const v=wB*wF*(mB-mF)*(mB-mF);
-        if(v>maxVar){ maxVar=v; thr=t; }
-      }
-      for(let i=0,p=0;i<d.length;i+=4,p++){
-        const v=gray[p]>=thr?255:0;
-        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
-      }
-    }else{
-      for(let i=0,p=0;i<d.length;i+=4,p++){
-        const v=gray[p]|0;
-        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
-      }
-    }
-    ctx.putImageData(img,0,0);
-    return out;
-  }
-  async function runOcrOnRect(rx,ry,rw,rh, clientX, clientY){
-    if(ocrBusy) return;
-    if(rw<12||rh<12){
-      hideOcrProgress();
-      ocrText.textContent='框太小，請框住整段文字（愈大愈準）。';
-      placeOcrPop(clientX, clientY);
-      setOcrMode(false);
-      return;
-    }
-    ocrBusy=true;
-    btnOcr.disabled=true;
-    placeOcrPop(clientX, clientY);
-    setOcrProgress(2, '準備截圖…');
-    placeOcrPop(clientX, clientY);
-    setOcrMode(false);
-    try{
-      renderer.render(scene3,camera);
-      const full=document.createElement('canvas');
-      full.width=canvas.width; full.height=canvas.height;
-      const fctx=full.getContext('2d',{willReadFrequently:true});
-      fctx.drawImage(canvas,0,0);
-      try{
-        const sample=fctx.getImageData(Math.floor(full.width/2), Math.floor(full.height/2), 1, 1).data;
-        const blank=sample[0]<2&&sample[1]<2&&sample[2]<2;
-        if(blank){
-          renderer.render(scene3,camera);
-          fctx.drawImage(canvas,0,0);
-        }
-      }catch(_e){}
-      setOcrProgress(8, '裁切並放大選區…');
-      const scaleX=canvas.width/Math.max(1,innerWidth), scaleY=canvas.height/Math.max(1,innerHeight);
-      const sx=Math.max(0,Math.floor(rx*scaleX));
-      const sy=Math.max(0,Math.floor(ry*scaleY));
-      const sw=Math.max(1,Math.min(full.width-sx, Math.floor(rw*scaleX)));
-      const sh=Math.max(1,Math.min(full.height-sy, Math.floor(rh*scaleY)));
-      const crop=document.createElement('canvas');
-      crop.width=sw; crop.height=sh;
-      crop.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
-      const variants=[
-        {img:preprocessCrop(crop,'gray'), psm:'6', label:'灰階區塊'},
-        {img:preprocessCrop(crop,'bin'), psm:'6', label:'二值區塊'},
-        {img:preprocessCrop(crop,'gray'), psm:'7', label:'單行'},
-        {img:preprocessCrop(crop,'gray'), psm:'11', label:'稀疏'},
-      ];
-      const worker=await ensureOcrWorker(function(pct, label){
-        setOcrProgress(pct, label);
-        placeOcrPop(clientX, clientY);
-      });
-      let bestText='', bestScore=-1;
-      for(let vi=0;vi<variants.length;vi++){
-        const v=variants[vi];
-        setOcrProgress(93+vi, '識別：'+v.label+'…');
-        await worker.setParameters({
-          tessedit_pageseg_mode: v.psm,
-          preserve_interword_spaces: '1',
-          user_defined_dpi: '300',
-        });
-        const res=await worker.recognize(v.img);
-        const data=res&&res.data?res.data:{};
-        const text=(data.text||'').trim();
-        const sc=scoreOcr(data);
-        if(text && sc>bestScore){
-          bestScore=sc;
-          bestText=text;
-        }
-        // Early exit if strong CJK result
-        const cjk=(text.match(/[\\u4e00-\\u9fff]/g)||[]).length;
-        if(cjk>=3 && (typeof data.confidence==='number'?data.confidence:0)>=55) break;
-      }
-      await worker.setParameters({ tessedit_pageseg_mode: '6' });
-      setOcrProgress(100, '完成');
-      hideOcrProgress();
-      ocrText.textContent=bestText||'（未能識別。請：① 滾輪放大 ② 框住整行字 ③ 字越大越準）';
-      placeOcrPop(clientX, clientY);
-    }catch(e){
-      hideOcrProgress();
-      ocrText.textContent='識別失敗：'+(e&&e.message?e.message:String(e));
-      placeOcrPop(clientX, clientY);
-      console.error('[OCR]', e);
-    }finally{
-      ocrBusy=false;
-      btnOcr.disabled=false;
-    }
-  }
-  btnOcr.onclick=function(){
-    if(ocrBusy) return;
-    if(ocrMode){ setOcrMode(false); return; }
-    setOcrMode(true);
-  };
-  document.getElementById('ocr-close').onclick=()=>{ ocrPop.style.display='none'; };
-  document.getElementById('ocr-copy').onclick=async()=>{
-    try{ await navigator.clipboard.writeText(ocrText.textContent||''); }catch(e){}
-  };
-  ocrLayer.addEventListener('pointerdown',e=>{
-    if(!ocrMode||ocrBusy) return;
-    e.preventDefault();
-    ocrDrag=true; ocrX0=e.clientX; ocrY0=e.clientY;
-    ocrBox.style.display='block';
-    ocrBox.style.left=ocrX0+'px'; ocrBox.style.top=ocrY0+'px';
-    ocrBox.style.width='0px'; ocrBox.style.height='0px';
-    try{ ocrLayer.setPointerCapture(e.pointerId); }catch(_e){}
-  });
-  ocrLayer.addEventListener('pointermove',e=>{
-    if(!ocrDrag) return;
-    const x1=e.clientX, y1=e.clientY;
-    const l=Math.min(ocrX0,x1), t=Math.min(ocrY0,y1);
-    const w=Math.abs(x1-ocrX0), h=Math.abs(y1-ocrY0);
-    ocrBox.style.left=l+'px'; ocrBox.style.top=t+'px';
-    ocrBox.style.width=w+'px'; ocrBox.style.height=h+'px';
-  });
-  ocrLayer.addEventListener('pointerup',e=>{
-    if(!ocrDrag) return;
-    ocrDrag=false;
-    const x1=e.clientX, y1=e.clientY;
-    const l=Math.min(ocrX0,x1), t=Math.min(ocrY0,y1);
-    const w=Math.abs(x1-ocrX0), h=Math.abs(y1-ocrY0);
-    ocrBox.style.display='none';
-    void runOcrOnRect(l,t,w,h, x1, y1);
-  });
-  addEventListener('keydown',e=>{
-    if(e.key==='Escape'){
-      if(ocrMode) setOcrMode(false);
-      else ocrPop.style.display='none';
-    }
-  });
   </script>
 </body>
 </html>`;
@@ -860,14 +422,6 @@ export async function buildProjectZip(
   const threeFiles = await fetchVendorThreeFiles();
   addThreeVendorToZip(zip, threeFiles, `${prefix}/vendor/`);
 
-  onProgress?.(8, '準備 OCR（繁中+英 完整語言包）');
-  {
-    const ocrFiles = await fetchVendorOcrFiles();
-    addOcrVendorToZip(zip, ocrFiles, `${prefix}/vendor/tesseract/`);
-    const bytes = Object.values(ocrFiles).reduce((n, b) => n + b.byteLength, 0);
-    console.info('[export] OCR packed', (bytes / 1024 / 1024).toFixed(2), 'MB →', `${prefix}/vendor/tesseract/`);
-  }
-
   const withData = project.scenes.filter((s) => s.source.dataUrl);
   const n = Math.max(withData.length, 1);
   let i = 0;
@@ -890,16 +444,13 @@ export async function buildProjectZip(
   site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
     index.html
     project.json
-    vendor/              (three.js + tesseract OCR 繁中+英)
+    vendor/              (three.js)
     assets/source/
 
 使用方式：
 1) 解壓到網站根目錄（例如 C:\\inetpub\\wwwroot）
 2) 瀏覽器開啟：http://{host}/site/{SITE}/{ROOM}/{DATE}/
-3) Viewer「識別文字」：框選畫面文字 → 游標旁顯示 OCR 結果（繁中/英）
-4) 若要繼續編輯：Editor「開啟 ZIP」載入本套件
-
-注意：OCR 使用 tesseract.js v7 + 完整 tessdata（eng + chi_tra），離線檔約 +90MB（每次 ZIP 都帶）
+3) 若要繼續編輯：Editor「開啟 ZIP」載入本套件
 `
   );
   onProgress?.(75, '壓縮中');

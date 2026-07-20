@@ -32,17 +32,13 @@
       <remove fileExtension=".json" />
       <remove fileExtension=".mjs" />
       <remove fileExtension=".wasm" />
-      <remove fileExtension=".traineddata" />
       <mimeMap fileExtension=".json" mimeType="application/json" />
       <mimeMap fileExtension=".mjs" mimeType="application/javascript" />
       <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
-      <mimeMap fileExtension=".traineddata" mimeType="application/octet-stream" />
     </staticContent>
   </system.webServer>
 </configuration>
 ```
-
-> **OCR：** `.traineddata` 必須有 MIME，否則 IIS 會 404，匯出 ZIP 時會失敗。
 
 ### 3. 發佈一條全景導覽
 
@@ -97,17 +93,13 @@ Place at the **IIS site root** (same folder as `index.html`):
       <remove fileExtension=".json" />
       <remove fileExtension=".mjs" />
       <remove fileExtension=".wasm" />
-      <remove fileExtension=".traineddata" />
       <mimeMap fileExtension=".json" mimeType="application/json" />
       <mimeMap fileExtension=".mjs" mimeType="application/javascript" />
       <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
-      <mimeMap fileExtension=".traineddata" mimeType="application/octet-stream" />
     </staticContent>
   </system.webServer>
 </configuration>
 ```
-
-> **OCR:** map `.traineddata` or IIS returns 404 and ZIP export cannot fetch language packs.
 
 ### 3. Publish a tour
 

@@ -19,7 +19,6 @@
     "express": "^4.21.2",
     "jszip": "^3.10.1",
     "multer": "^1.4.5-lts.2",
-    "tesseract.js": "^7.0.0",
     "three": "^0.172.0"
   },
   "devDependencies": {
