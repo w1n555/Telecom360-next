@@ -18,7 +18,7 @@ Publish by **exporting a ZIP** and **copying files into the IIS website root** (
 - Add **info annotations** and **links between scenes**.
 - Set each scene’s **initial view**.
 - Walk slightly in 3D with **WASD / QE** (**always on**, no toggle).
-- **Export a self-contained package** (Three.js files inside the package; **no CDN**).
+- **Export a self-contained package** (prebuilt Viewer bundle + images; **no CDN**).
 - Deploy by **manual copy** to the IIS site root (often `C:\inetpub\wwwroot`).
 
 UI language: **Traditional Chinese**. Branding: **CLP** logo.
@@ -32,8 +32,9 @@ UI language: **Traditional Chinese**. Branding: **CLP** logo.
 | Engine | Marzipano | **three.js (WebGL 2)** |
 | Implementation | Older stack | **TypeScript** + modern editor UI |
 | Package format | Old ZIP **not compatible** | New package format only |
-| Offline 3D library | Often relied on external/CDN patterns | **`vendor/` shipped inside each tour package** |
+| Offline 3D library | Often relied on external/CDN patterns | **Viewer JS bundle** (three.js inside; **no CDN**) |
 | Server publish | Copy into IIS `wwwroot` | **Same: copy files only** (no Node app on the server) |
+| Viewer source | Coupled / duplicated | **Independent `viewer/` entry** + shared `PanoramaEngine` |
 
 ### Removed (by design)
 
@@ -59,10 +60,11 @@ UI language: **Traditional Chinese**. Branding: **CLP** logo.
 
 | Layer | Technology |
 |-------|------------|
-| 3D / panorama | **three.js r172** via **WebGL 2** |
+| 3D / panorama | **three.js r172** via **WebGL 2** (`PanoramaEngine`, shared) |
 | Language | **TypeScript** |
-| Build (by development team) | **Vite 6** |
-| Browser export | **JSZip** |
+| Apps | **Editor** (`index.html`) + **Viewer** (`viewer/index.html`) — two Vite entries |
+| Build (by development team) | **Vite 6** → `dist/` + **`viewer-shell/`** (export template) |
+| Browser export | **JSZip** assembles shell + `project.json` + images (**no runtime HTML generation**) |
 | Hosting | **IIS static files** |
 
 ---
@@ -74,8 +76,8 @@ UI language: **Traditional Chinese**. Branding: **CLP** logo.
 You need **IIS** and a website physical path (commonly `C:\inetpub\wwwroot`).
 
 1. Obtain the **Editor website package** from your team / release  
-   (a ready-to-copy folder with at least: `index.html`, `assets\`, `brand\`, `vendor\`, …).  
-   *Developers build this package once; end users only copy it.*
+   (a ready-to-copy folder with at least: `index.html`, `assets\`, `brand\`, `viewer-shell\`, …).  
+   *Developers build this package once; end users only copy it. `viewer-shell` is required for ZIP export.*
 2. **Copy all files** into the **IIS site root**, e.g. `C:\inetpub\wwwroot\`.
 3. Optionally add / keep `web.config` for `.json` and `.mjs` MIME types  
    (see [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)).
@@ -98,12 +100,12 @@ You need **IIS** and a website physical path (commonly `C:\inetpub\wwwroot`).
 
    ```text
    {IIS root}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
-     index.html
-     project.json
-     vendor\
-       three.module.js
-       three.core.js
-     assets\source\
+     index.html              ← prebuilt Viewer
+     project.json            ← tour data (fetched by Viewer)
+     brand\                  ← logos / favicon
+     assets\
+       viewer-*.js / *.css   ← Viewer app + three.js bundle
+       source\*.jpg          ← panorama images
    ```
 
    The ZIP also contains `README.txt` at the **ZIP root** (next to the `site\` folder).
@@ -133,13 +135,27 @@ You need **IIS** and a website physical path (commonly `C:\inetpub\wwwroot`).
 ```text
 README.txt                          ← at ZIP root
 site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
-  index.html
-  project.json
-  vendor/
-    three.module.js
-    three.core.js
-  assets/source/*.jpg
+  index.html                        ← prebuilt Viewer (from viewer-shell)
+  project.json                      ← single source of tour data
+  brand/
+  assets/
+    viewer-*.js / PanoramaEngine-*.js / *.css
+    source/*.jpg
 ```
+
+### For developers
+
+```bash
+npm install
+npm run build          # typecheck + Vite (editor + viewer) + prepare viewer-shell
+npm run dev            # Editor; export needs viewer-shell from a prior build
+npm run iis:stage      # build and copy dist → C:\inetpub\wwwroot
+```
+
+- **Viewer source:** `src/viewer-main.ts` + `viewer/index.html` (uses `PanoramaEngine`).
+- **Export template:** `public/viewer-shell/` and `dist/viewer-shell/` (generated; do not hand-edit).
+- Editor **must be deployed with `viewer-shell/`** so browser export can fetch it.
+- Tour data is **only** in `project.json` (not inlined into HTML).
 
 ---
 
@@ -168,7 +184,7 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 - 加入 **注解標示**、**場景之間跳轉**
 - 設定每場景 **初始視角**
 - 以 **WASD / QE** 輕微 3D 移動（**預設開、無開關掣**）
-- **匯出完整離線套件**（Three.js 在套件內，**不需 CDN**）
+- **匯出完整離線套件**（預建 Viewer bundle + 圖片，**不需 CDN**）
 - **人手複製** 到 IIS 網站根（常見 `C:\inetpub\wwwroot`）發佈
 
 介面：**繁體中文**；品牌：**CLP** LOGO。
@@ -182,8 +198,9 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 | 引擎 | Marzipano | **three.js（WebGL 2）** |
 | 實作 | 舊技術棧 | **TypeScript** + 新編輯介面 |
 | 套件格式 | 舊 ZIP **不相容** | 僅新格式 |
-| 離線 3D 庫 | 常依賴外網／CDN 模式 | **每個導覽套件內附 `vendor/`** |
+| 離線 3D 庫 | 常依賴外網／CDN 模式 | **Viewer JS bundle**（內含 three.js，**無 CDN**） |
 | 上線 | Copy 到 IIS `wwwroot` | **同樣只 copy**（伺服器不必跑 Node） |
+| Viewer 源碼 | 與匯出重複／分叉 | **獨立 `viewer/` entry** + 共用 `PanoramaEngine` |
 
 ### 刪除了什麼（刻意）
 
@@ -209,10 +226,11 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 
 | 層級 | 技術 |
 |------|------|
-| 全景 / 3D | **three.js r172**（**WebGL 2**） |
+| 全景 / 3D | **three.js r172**（**WebGL 2**；共用 `PanoramaEngine`） |
 | 語言 | **TypeScript** |
-| 建置（由開發團隊） | **Vite 6** |
-| 瀏覽器匯出 | **JSZip** |
+| 應用 | **編輯器** + **檢視器**（兩個 Vite entry） |
+| 建置（由開發團隊） | **Vite 6** → `dist/` + **`viewer-shell/`**（匯出模板） |
+| 瀏覽器匯出 | **JSZip** 組裝 shell + `project.json` + 圖片（**不再 runtime 砌 HTML**） |
 | 上線 | **IIS 靜態網站** |
 
 ---
@@ -224,8 +242,8 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 需要 **IIS** 與網站實體路徑（多數是 `C:\inetpub\wwwroot`）。
 
 1. 向團隊／發佈包取得 **編輯器網站檔案**  
-   （可直接複製的資料夾，至少含：`index.html`、`assets\`、`brand\`、`vendor\` …）。  
-   *由開發端建置一次；使用者只需複製。*
+   （可直接複製的資料夾，至少含：`index.html`、`assets\`、`brand\`、`viewer-shell\` …）。  
+   *由開發端建置一次；使用者只需複製。匯出 ZIP 需要 `viewer-shell`。*
 2. **全部複製** 到 IIS 網站根目錄，例如 `C:\inetpub\wwwroot\`。
 3. 可選：放入／保留 `web.config`（`.json`、`.mjs` MIME，見 [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)）。
 4. 瀏覽器開啟，例如 `http://localhost/` 或 `http://{伺服器}/`。
@@ -247,12 +265,12 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 
    ```text
    {IIS 根目錄}\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
-     index.html
-     project.json
-     vendor\
-       three.module.js
-       three.core.js
-     assets\source\
+     index.html              ← 預建 Viewer
+     project.json            ← 導覽資料（Viewer 以 fetch 載入）
+     brand\
+     assets\
+       viewer-*.js / *.css   ← Viewer 應用（含 three.js）
+       source\*.jpg          ← 全景圖
    ```
 
    ZIP **根層**另有 `README.txt`（與 `site\` 同一層，不是在 DATE 資料夾內）。
@@ -282,13 +300,27 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 ```text
 README.txt                          ← ZIP 根目錄
 site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
-  index.html
-  project.json
-  vendor/
-    three.module.js
-    three.core.js
-  assets/source/*.jpg
+  index.html                        ← 預建 Viewer（來自 viewer-shell）
+  project.json                      ← 導覽資料唯一來源
+  brand/
+  assets/
+    viewer-*.js / PanoramaEngine-*.js / *.css
+    source/*.jpg
 ```
+
+### 開發者
+
+```bash
+npm install
+npm run build          # typecheck + Vite + 產生 viewer-shell
+npm run dev
+npm run iis:stage      # build 後複製 dist → C:\inetpub\wwwroot
+```
+
+- Viewer 源碼：`src/viewer-main.ts` + `viewer/index.html`
+- 匯出模板：`viewer-shell/`（build 產物，勿手改）
+- 編輯器部署必須包含 `viewer-shell/`，瀏覽器匯出先 fetch 殼層再打包
+- 導覽資料只在 `project.json`，**不再** inline 進 HTML
 
 ---
 

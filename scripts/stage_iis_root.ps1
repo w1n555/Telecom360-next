@@ -42,4 +42,9 @@ $webConfig = @'
 '@
 Set-Content -Path (Join-Path $IIS_ROOT 'web.config') -Value $webConfig -Encoding UTF8
 Write-Host "Staged static Editor: $IIS_ROOT"
-Write-Host "Publish viewers: export ZIP -> unzip here (or copy whole folder to server wwwroot)"
+if (-not (Test-Path (Join-Path $IIS_ROOT 'viewer-shell\manifest.json'))) {
+  Write-Warning "viewer-shell missing under $IIS_ROOT — ZIP export from Editor will fail. Rebuild with npm run build."
+} else {
+  Write-Host "viewer-shell OK (required for Export ZIP)"
+}
+Write-Host "Publish tours: Editor Export ZIP -> unzip here (or copy folder to server wwwroot)"

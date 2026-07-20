@@ -15,17 +15,29 @@ import { t } from './core/i18n/zh-Hant';
 const ICON_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>`;
 const ICON_SCENE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`;
 
+/** Resolve brand/asset URLs relative to this page (works under /site/S/R/D/ and /viewer/). */
+function assetUrl(rel: string): string {
+  return new URL(rel.replace(/^\//, ''), location.href).href;
+}
+
 async function loadPackage(): Promise<ProjectDocument> {
-  const url = new URL('project.json', location.href).toString();
+  const url = assetUrl('project.json');
   const res = await fetch(url);
-  if (!res.ok) throw new Error('找不到 project.json');
+  if (!res.ok) {
+    throw new Error(
+      `找不到 project.json（此頁應與 project.json 同目錄；匯出套件解壓後開啟 site/{SITE}/{ROOM}/{DATE}/）`
+    );
+  }
   const pkg = (await res.json()) as ProjectPackage;
   if (!isKnownPackageFormat(pkg.format) || pkg.version !== PACKAGE_VERSION) {
     throw new Error('專案格式不支援');
   }
+  if (!pkg.project?.scenes?.length) {
+    throw new Error('專案沒有場景');
+  }
   for (const s of pkg.project.scenes) {
     if (!/^https?:|blob:|data:/i.test(s.source.url)) {
-      s.source.url = new URL(s.source.url, location.href).toString();
+      s.source.url = assetUrl(s.source.url);
     }
     delete (s as { measurements?: unknown }).measurements;
   }
@@ -42,14 +54,18 @@ async function main() {
   try {
     project = await loadPackage();
   } catch (e) {
-    root.innerHTML = `<div style="padding:24px;color:#fff;background:#0b1220;height:100%">${(e as Error).message}</div>`;
+    const msg = escapeHtml((e as Error).message || String(e));
+    root.innerHTML = `<div style="padding:24px;color:#fff;background:#0b1220;min-height:100%;box-sizing:border-box;font-family:system-ui,sans-serif"><strong>無法載入導覽</strong><p style="margin:12px 0 0;line-height:1.5">${msg}</p></div>`;
     return;
   }
+
+  document.title = `${project.name} · Telecom360-next`;
+  const brandSrc = assetUrl('brand/clp-light.png');
 
   root.innerHTML = `
     <div class="viewer-root">
       <div class="viewer-bar">
-        <img src="/brand/clp-light.png" alt="CLP" onerror="this.style.display='none'" />
+        <img src="${brandSrc}" alt="CLP" onerror="this.style.display='none'" />
         <div class="title" id="v-title"></div>
         <div class="viewer-tools">
           <button type="button" id="v-auto">自動旋轉</button>

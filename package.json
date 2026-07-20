@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "node server/dev.mjs",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/prepare_viewer_shell.mjs",
+    "prepare:viewer-shell": "node scripts/prepare_viewer_shell.mjs",
     "preview": "node server/preview.mjs",
     "start": "node server/preview.mjs",
     "typecheck": "tsc --noEmit",

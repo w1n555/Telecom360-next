@@ -1,30 +1,39 @@
 /**
- * Offline POC: build a deploy-style viewer package (no CDN) and verify HTTP 200s.
- * Usage: node scripts/poc_viewer_package.mjs
+ * Offline POC: copy prebuilt viewer-shell + sample image + project.json, verify files exist.
+ * Usage: npm run build && node scripts/poc_viewer_package.mjs
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'site', 'POC', 'POC', 'verify');
 
-function copyThree() {
-  const vendorSrc = path.join(ROOT, 'node_modules', 'three', 'build');
-  const vendorDst = path.join(OUT, 'vendor');
-  fs.mkdirSync(vendorDst, { recursive: true });
-  for (const f of ['three.module.js', 'three.core.js']) {
-    const from = path.join(vendorSrc, f);
-    const to = path.join(vendorDst, f);
-    if (!fs.existsSync(from)) throw new Error('missing ' + from);
-    fs.copyFileSync(from, to);
-    console.log('OK vendor', f, fs.statSync(to).size);
+function findShell() {
+  for (const c of [
+    path.join(ROOT, 'public', 'viewer-shell'),
+    path.join(ROOT, 'dist', 'viewer-shell'),
+  ]) {
+    if (fs.existsSync(path.join(c, 'index.html')) && fs.existsSync(path.join(c, 'manifest.json'))) {
+      return c;
+    }
+  }
+  throw new Error('viewer-shell missing — run npm run build first');
+}
+
+function copyTree(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const name of fs.readdirSync(src)) {
+    if (name === 'manifest.json') continue;
+    const from = path.join(src, name);
+    const to = path.join(dest, name);
+    if (fs.statSync(from).isDirectory()) copyTree(from, to);
+    else fs.copyFileSync(from, to);
   }
 }
 
 function pickImage() {
-  // reuse any previously deployed jpg if present
   const site = path.join(ROOT, 'site');
   function walk(d, acc = []) {
     if (!fs.existsSync(d)) return acc;
@@ -37,64 +46,22 @@ function pickImage() {
     return acc;
   }
   const imgs = walk(site).filter((p) => !p.includes(`${path.sep}POC${path.sep}`));
-  if (!imgs.length) throw new Error('No sample JPG under site/ — deploy once from editor first or place a jpg');
+  if (!imgs.length) throw new Error('No sample JPG under site/ — export once from editor first');
   return imgs[0];
 }
 
-function buildHtml(project) {
-  const json = JSON.stringify({ format: 'telecom360-next-package', version: 1, project });
-  // minimal viewer same structure as ExportService (local three only)
-  return `<!DOCTYPE html>
-<html lang="zh-Hant"><head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>POC Viewer</title>
-<style>html,body{margin:0;height:100%;background:#0b1220;color:#fff}#c{position:fixed;inset:0}#ui{position:fixed;left:12px;top:12px;z-index:2}</style>
-</head><body>
-<canvas id="c"></canvas><div id="ui"><div id="title"></div><div id="status">loading…</div></div>
-<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
-<script type="module">
-import * as THREE from 'three';
-const PKG = ${json};
-const project = PKG.project;
-const canvas = document.getElementById('c');
-const status = document.getElementById('status');
-document.getElementById('title').textContent = project.name;
-try {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(100, 1, 0.1, 2000);
-  const geo = new THREE.SphereGeometry(500, 64, 40); geo.scale(-1,1,1);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x333 });
-  scene.add(new THREE.Mesh(geo, mat));
-  const s0 = project.scenes[0];
-  const url = new URL(s0.source.url, location.href).href;
-  const tex = await new THREE.TextureLoader().loadAsync(url);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
-  function resize(){ const w=innerWidth,h=innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
-  function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); }
-  resize(); addEventListener('resize', resize); loop();
-  status.textContent = 'OK image loaded: ' + s0.source.url;
-  console.log('POC_OK', url);
-} catch (e) {
-  status.textContent = 'FAIL ' + e;
-  console.error('POC_FAIL', e);
-}
-</script>
-</body></html>`;
-}
-
 function main() {
+  const shell = findShell();
   fs.rmSync(OUT, { recursive: true, force: true });
+  copyTree(shell, OUT);
+
   fs.mkdirSync(path.join(OUT, 'assets', 'source'), { recursive: true });
-  copyThree();
   const imgPath = pickImage();
   const fileName = path.basename(imgPath);
-  const rel = `assets/source/${fileName}`;
+  const sceneId = 'scn_poc';
+  const rel = `assets/source/${sceneId}_${fileName}`;
   fs.copyFileSync(imgPath, path.join(OUT, rel));
-  console.log('OK image', fileName, fs.statSync(path.join(OUT, rel)).size);
+  console.log('OK image', fileName);
 
   const project = {
     id: 'poc',
@@ -104,7 +71,7 @@ function main() {
       autorotateEnabled: false,
       fullscreenButton: true,
       viewControlButtons: true,
-      defaultParallaxEnabled: false,
+      defaultParallaxEnabled: true,
       parallaxRadius: 120,
       sphereRadius: 500,
       anisotropy: 16,
@@ -112,7 +79,7 @@ function main() {
     },
     scenes: [
       {
-        id: 'scn_poc',
+        id: sceneId,
         name: 'POC',
         source: { kind: 'equirectangular', url: rel, fileName, width: 11904, height: 5952 },
         initialView: { yaw: 0, pitch: 0, fov: 1.745 },
@@ -124,9 +91,12 @@ function main() {
     updatedAt: new Date().toISOString(),
   };
 
-  fs.writeFileSync(path.join(OUT, 'project.json'), JSON.stringify({ format: 'telecom360-next-package', version: 1, project }, null, 2));
-  fs.writeFileSync(path.join(OUT, 'index.html'), buildHtml(project));
+  fs.writeFileSync(
+    path.join(OUT, 'project.json'),
+    JSON.stringify({ format: 'telecom360-next-package', version: 1, project }, null, 2)
+  );
   console.log('Wrote', OUT);
+  console.log('Open /site/POC/POC/verify/ after staging or npm run dev');
 }
 
 main();

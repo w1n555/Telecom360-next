@@ -1,64 +1,52 @@
 /**
- * Repair all site/{S}/{R}/{D}/ packages:
- * - ensure vendor/three.module.js + three.core.js
- * - fix duplicate `project` identifier in old index.html
- * - ensure importmap points to local three (no CDN)
+ * Repair / migrate site/{S}/{R}/{D}/ packages to the prebuilt viewer shell.
+ *
+ * - Keeps project.json + assets/source/*
+ * - Overwrites index.html + viewer assets/brand from public/viewer-shell (or dist/viewer-shell)
+ * - Removes obsolete per-package vendor/three.* when shell is present
+ *
+ * Requires: npm run build (so viewer-shell exists)
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SITE = path.join(ROOT, 'site');
-const VENDOR_SRC = path.join(ROOT, 'public', 'vendor');
 
-function copyVendor(destDir) {
-  const v = path.join(destDir, 'vendor');
-  fs.mkdirSync(v, { recursive: true });
-  for (const f of ['three.module.js', 'three.core.js']) {
-    const from = path.join(VENDOR_SRC, f);
-    if (!fs.existsSync(from)) throw new Error('Missing ' + from);
-    fs.copyFileSync(from, path.join(v, f));
-  }
-}
-
-function repairIndex(htmlPath) {
-  let html = fs.readFileSync(htmlPath, 'utf8');
-  let changed = false;
-  const before = html;
-
-  // Fix name clash: function project( -> function projectToScreen(
-  if (/function\s+project\s*\(/.test(html)) {
-    html = html.replace(/function\s+project\s*\(/g, 'function projectToScreen(');
-    // only replace call sites that look like project(h.yaw or project(y,p for screen
-    html = html.replace(/const scr=project\(/g, 'const scr=projectToScreen(');
-    html = html.replace(/const scr = project\(/g, 'const scr = projectToScreen(');
-    changed = true;
-  }
-
-  // Force local importmap (no unpkg/CDN)
-  if (html.includes('unpkg.com') || html.includes('esm.sh') || html.includes('cdn.jsdelivr')) {
-    html = html.replace(
-      /<script type="importmap">[\s\S]*?<\/script>/,
-      '<script type="importmap">\n  {"imports":{"three":"./vendor/three.module.js"}}\n  </script>'
-    );
-    changed = true;
-  }
-  if (!html.includes('./vendor/three.module.js')) {
-    // inject importmap if missing
-    if (!html.includes('importmap')) {
-      html = html.replace(
-        '</head>',
-        '  <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>\n</head>'
-      );
-      changed = true;
+function findShellRoot() {
+  const candidates = [
+    path.join(ROOT, 'public', 'viewer-shell'),
+    path.join(ROOT, 'dist', 'viewer-shell'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, 'manifest.json')) && fs.existsSync(path.join(c, 'index.html'))) {
+      return c;
     }
   }
+  return null;
+}
 
-  if (html !== before) {
-    fs.writeFileSync(htmlPath, html);
+function copyTree(srcDir, destDir) {
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const name of fs.readdirSync(srcDir)) {
+    const from = path.join(srcDir, name);
+    const to = path.join(destDir, name);
+    const st = fs.statSync(from);
+    if (st.isDirectory()) {
+      if (name === 'assets') {
+        // Merge: do not wipe assets/source
+        copyTree(from, to);
+      } else {
+        copyTree(from, to);
+      }
+    } else if (name === 'manifest.json') {
+      // shell meta only — not needed in published tour
+      continue;
+    } else {
+      fs.copyFileSync(from, to);
+    }
   }
-  return changed;
 }
 
 function walkPackages() {
@@ -73,28 +61,53 @@ function walkPackages() {
       for (const d of fs.readdirSync(p2)) {
         const p3 = path.join(p2, d);
         if (!fs.statSync(p3).isDirectory()) continue;
-        if (fs.existsSync(path.join(p3, 'index.html'))) packs.push(p3);
+        if (fs.existsSync(path.join(p3, 'project.json')) || fs.existsSync(path.join(p3, 'index.html'))) {
+          packs.push(p3);
+        }
       }
     }
   }
   return packs;
 }
 
+const shell = findShellRoot();
+if (!shell) {
+  console.error('No viewer-shell found. Run: npm run build');
+  process.exit(1);
+}
+
+console.log('Using shell:', shell);
 let n = 0;
 for (const dir of walkPackages()) {
-  copyVendor(dir);
-  const idx = path.join(dir, 'index.html');
-  const fixed = repairIndex(idx);
-  const sz = fs.statSync(idx).size;
-  const hasCore = fs.existsSync(path.join(dir, 'vendor', 'three.core.js'));
-  const hasMod = fs.existsSync(path.join(dir, 'vendor', 'three.module.js'));
-  console.log(
-    (fixed ? 'FIXED' : 'OK   '),
-    path.relative(ROOT, dir),
-    `html=${sz}`,
-    `core=${hasCore}`,
-    `mod=${hasMod}`
-  );
+  if (!fs.existsSync(path.join(dir, 'project.json'))) {
+    console.log('SKIP (no project.json)', path.relative(ROOT, dir));
+    continue;
+  }
+  // Preserve panorama sources
+  const sourceDir = path.join(dir, 'assets', 'source');
+  const sourceBackup = fs.existsSync(sourceDir)
+    ? fs.readdirSync(sourceDir).map((f) => ({
+        name: f,
+        data: fs.readFileSync(path.join(sourceDir, f)),
+      }))
+    : [];
+
+  copyTree(shell, dir);
+
+  if (sourceBackup.length) {
+    fs.mkdirSync(sourceDir, { recursive: true });
+    for (const f of sourceBackup) {
+      fs.writeFileSync(path.join(sourceDir, f.name), f.data);
+    }
+  }
+
+  // Drop legacy unbundled three vendor if present
+  const vendor = path.join(dir, 'vendor');
+  if (fs.existsSync(vendor)) {
+    fs.rmSync(vendor, { recursive: true, force: true });
+  }
+
+  console.log('OK  ', path.relative(ROOT, dir));
   n++;
 }
 console.log(`Repaired ${n} package(s)`);

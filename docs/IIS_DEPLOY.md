@@ -16,8 +16,8 @@
    - `index.html`
    - `assets\`
    - `brand\`
-   - `vendor\`
-   - （可選）`viewer\`、`favicon.png` 等
+   - `viewer-shell\`（**匯出 ZIP 必須**；預建 Viewer 模板）
+   - （可選）`viewer\`、`vendor\`、`favicon.png` 等
 4. 瀏覽器開啟網站首頁（例如 `http://localhost/`；實際 port 視 IIS 繫結而定）。
 
 ### 2. 建議的 `web.config`（MIME）
@@ -47,11 +47,12 @@
 
 ```text
 C:\inetpub\wwwroot\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
-  index.html
+  index.html              ← 預建 Viewer
   project.json
-  vendor\three.module.js
-  vendor\three.core.js
-  assets\source\
+  brand\
+  assets\
+    viewer-*.js / *.css
+    source\*.jpg
 ```
 
 （ZIP 根目錄另有 `README.txt`。）
@@ -67,6 +68,7 @@ http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 - 伺服器 **不需要** Node.js 才能使用靜態編輯器與已發佈檢視器。
 - 舊版 Marzipano ZIP **不能**用於本版。
 - 瀏覽器需支援 **WebGL 2**。
+- 編輯器目錄必須包含 **`viewer-shell\`**，否則「匯出 ZIP」會失敗。
 
 ---
 
@@ -78,7 +80,7 @@ For **end users / IT**: **IIS + copy files**. **Node.js is not required** on the
 
 1. Open **IIS Manager** and select the website.
 2. Note the **physical path** (often `C:\inetpub\wwwroot`).
-3. **Copy** the Editor web package into that folder (`index.html`, `assets\`, `brand\`, `vendor\`, …).
+3. **Copy** the Editor web package into that folder (`index.html`, `assets\`, `brand\`, **`viewer-shell\`** (required for ZIP export), …).
 4. Browse the site home page (e.g. `http://localhost/`; port depends on bindings).
 
 ### 2. Suggested `web.config` (MIME)
@@ -108,11 +110,12 @@ Place at the **IIS site root** (same folder as `index.html`):
 
 ```text
 C:\inetpub\wwwroot\site\{SITE_CODE}\{ROOM_NAME}\{PHOTO_DATE}\
-  index.html
+  index.html              ← prebuilt Viewer
   project.json
-  vendor\three.module.js
-  vendor\three.core.js
-  assets\source\
+  brand\
+  assets\
+    viewer-*.js / *.css
+    source\*.jpg
 ```
 
 (`README.txt` is at the ZIP root.)
@@ -128,3 +131,4 @@ http://{server}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 - **No Node.js** required on the server for static Editor + published viewers.
 - Legacy Marzipano ZIP is **not** supported.
 - Browsers need **WebGL 2**.
+- Editor deploy **must include `viewer-shell\`**, or **Export ZIP** will fail.

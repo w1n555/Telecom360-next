@@ -266,11 +266,6 @@ export class PanoramaEngine {
     });
   }
 
-  /** @deprecated use aimAndZoomIn */
-  async aimAndPush(targetYaw: number, targetPitch: number, ms = 380): Promise<void> {
-    return this.aimAndZoomIn(targetYaw, targetPitch, ms);
-  }
-
   /** Clear panorama texture (empty project / all scenes deleted) */
   clearTexture() {
     if (this.texture) {
