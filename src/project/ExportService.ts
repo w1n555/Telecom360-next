@@ -82,13 +82,14 @@ function addThreeVendorToZip(zip: JSZip, files: { module: Uint8Array; core: Uint
   zip.file(`${prefix}three.core.js`, files.core);
 }
 
-/** Offline OCR runtime + eng/chi_tra language packs (~11MB). */
+/** Offline OCR runtime + eng / 繁中 / 簡中 language packs (~13MB). */
 const OCR_VENDOR_FILES = [
   'tesseract.min.js',
   'worker.min.js',
   'tesseract-core-simd.wasm.js',
   'eng.traineddata',
   'chi_tra.traineddata',
+  'chi_sim.traineddata',
 ] as const;
 
 async function fetchVendorOcrFiles(): Promise<Record<string, Uint8Array>> {
@@ -550,7 +551,7 @@ function buildViewerHtml(project: ProjectDocument): string {
     const base=ocrBaseUrl();
     const langPath=base.endsWith('/')?base.slice(0,-1):base;
     onPct && onPct(15, '檢查語言包…');
-    const need=['eng.traineddata','chi_tra.traineddata','worker.min.js','tesseract-core-simd.wasm.js'];
+    const need=['eng.traineddata','chi_tra.traineddata','chi_sim.traineddata','worker.min.js','tesseract-core-simd.wasm.js'];
     for (let i=0;i<need.length;i++){
       const f=need[i];
       const u=base+f;
@@ -558,8 +559,8 @@ function buildViewerHtml(project: ProjectDocument): string {
       if(!r.ok) throw new Error('缺少 OCR 檔：'+u+' (HTTP '+r.status+')');
       onPct && onPct(15 + Math.round(((i+1)/need.length)*10), '檢查：'+f);
     }
-    // load phase: map tesseract logger 0–1 into 25–90%
-    ocrWorker=await Tesseract.createWorker(['eng','chi_tra'], 1, {
+    // 繁中 + 簡中 + 英文（全景標牌常見混用）
+    ocrWorker=await Tesseract.createWorker(['chi_tra','chi_sim','eng'], 1, {
       workerPath: base+'worker.min.js',
       langPath: langPath,
       corePath: base+'tesseract-core-simd.wasm.js',
@@ -571,14 +572,56 @@ function buildViewerHtml(project: ProjectDocument): string {
         onPct && onPct(pct, mapOcrStatus(m.status));
       },
     });
+    // Better defaults for signage / mixed CJK+Latin on photos
+    await ocrWorker.setParameters({
+      tessedit_pageseg_mode: '6', // uniform block of text
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300',
+    });
     onPct && onPct(92, '引擎就緒');
     return ocrWorker;
   }
+  /** Upscale + contrast — critical for small CJK glyphs on panoramas */
+  function preprocessCrop(src){
+    const minSide=480;
+    const scale=Math.max(3, minSide/Math.max(1,src.width), minSide/Math.max(1,src.height));
+    const w=Math.max(1, Math.round(src.width*scale));
+    const h=Math.max(1, Math.round(src.height*scale));
+    const out=document.createElement('canvas');
+    out.width=w; out.height=h;
+    const ctx=out.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingEnabled=true;
+    ctx.imageSmoothingQuality='high';
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(0,0,w,h);
+    ctx.drawImage(src,0,0,w,h);
+    const img=ctx.getImageData(0,0,w,h);
+    const d=img.data;
+    let min=255, max=0;
+    const gray=new Float32Array(w*h);
+    for(let i=0,p=0;i<d.length;i+=4,p++){
+      const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+      gray[p]=g;
+      if(g<min) min=g;
+      if(g>max) max=g;
+    }
+    const range=Math.max(1, max-min);
+    // contrast stretch + mild sharpen-ish threshold midtones
+    for(let i=0,p=0;i<d.length;i+=4,p++){
+      let g=((gray[p]-min)/range)*255;
+      g=(g-128)*1.45+128;
+      g=Math.max(0,Math.min(255,g));
+      d[i]=d[i+1]=d[i+2]=g;
+      d[i+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+    return out;
+  }
   async function runOcrOnRect(rx,ry,rw,rh, clientX, clientY){
     if(ocrBusy) return;
-    if(rw<8||rh<8){
+    if(rw<12||rh<12){
       hideOcrProgress();
-      ocrText.textContent='框太小，請再拖大一點。';
+      ocrText.textContent='框太小，請框住整段文字（愈大愈準）。';
       placeOcrPop(clientX, clientY);
       setOcrMode(false);
       return;
@@ -588,7 +631,6 @@ function buildViewerHtml(project: ProjectDocument): string {
     placeOcrPop(clientX, clientY);
     setOcrProgress(2, '準備截圖…');
     placeOcrPop(clientX, clientY);
-    // exit select mode but keep popup visible
     setOcrMode(false);
     try{
       renderer.render(scene3,camera);
@@ -604,7 +646,7 @@ function buildViewerHtml(project: ProjectDocument): string {
           fctx.drawImage(canvas,0,0);
         }
       }catch(_e){}
-      setOcrProgress(8, '裁切選區…');
+      setOcrProgress(8, '裁切並放大選區…');
       const scaleX=canvas.width/Math.max(1,innerWidth), scaleY=canvas.height/Math.max(1,innerHeight);
       const sx=Math.max(0,Math.floor(rx*scaleX));
       const sy=Math.max(0,Math.floor(ry*scaleY));
@@ -613,18 +655,26 @@ function buildViewerHtml(project: ProjectDocument): string {
       const crop=document.createElement('canvas');
       crop.width=sw; crop.height=sh;
       crop.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
+      const enhanced=preprocessCrop(crop);
       const worker=await ensureOcrWorker(function(pct, label){
         setOcrProgress(pct, label);
         placeOcrPop(clientX, clientY);
       });
-      setOcrProgress(94, '識別文字中…');
-      const res=await worker.recognize(crop, undefined, {
-        // progress during recognize also via worker logger already attached
-      });
+      setOcrProgress(94, '識別文字中（中/英）…');
+      // Try block mode first, then sparse text if weak result
+      let res=await worker.recognize(enhanced);
+      let text=(res&&res.data&&res.data.text?res.data.text:'').trim();
+      const weak=!text || text.replace(/\\s/g,'').length<2;
+      if(weak){
+        setOcrProgress(96, '再試稀疏文字模式…');
+        await worker.setParameters({ tessedit_pageseg_mode: '11' });
+        res=await worker.recognize(enhanced);
+        text=(res&&res.data&&res.data.text?res.data.text:'').trim();
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      }
       setOcrProgress(100, '完成');
-      const text=(res&&res.data&&res.data.text?res.data.text:'').trim();
       hideOcrProgress();
-      ocrText.textContent=text||'（未能識別文字，請框選更清晰／更大的字）';
+      ocrText.textContent=text||'（未能識別。請：① 滾輪放大畫面 ② 框住整行字 ③ 避免太斜/太暗）';
       placeOcrPop(clientX, clientY);
     }catch(e){
       hideOcrProgress();
