@@ -16,7 +16,16 @@ $rc = (Start-Process -FilePath robocopy.exe -ArgumentList @(
 ) -Wait -PassThru -NoNewWindow).ExitCode
 if ($rc -ge 8) { throw "robocopy dist failed exit $rc" }
 
-# Static MIME only (no ARR /api proxy)
+# Ensure OCR vendor is on site root (public/vendor is in dist after vite build)
+$ocrSrc = Join-Path $Repo 'public\vendor\tesseract'
+$ocrDst = Join-Path $IIS_ROOT 'vendor\tesseract'
+if (Test-Path $ocrSrc) {
+  New-Item -ItemType Directory -Force -Path $ocrDst | Out-Null
+  robocopy $ocrSrc $ocrDst /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+  Write-Host "OCR vendor staged: $ocrDst"
+}
+
+# Static MIME only (no ARR /api proxy). .traineddata required for OCR export fetch.
 $webConfig = @'
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
@@ -25,11 +34,21 @@ $webConfig = @'
       <remove fileExtension=".json" />
       <remove fileExtension=".mjs" />
       <remove fileExtension=".wasm" />
+      <remove fileExtension=".traineddata" />
       <mimeMap fileExtension=".json" mimeType="application/json" />
       <mimeMap fileExtension=".mjs" mimeType="application/javascript" />
       <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
       <mimeMap fileExtension=".ply" mimeType="application/octet-stream" />
+      <mimeMap fileExtension=".traineddata" mimeType="application/octet-stream" />
     </staticContent>
+    <security>
+      <requestFiltering>
+        <fileExtensions>
+          <remove fileExtension=".traineddata" />
+          <add fileExtension=".traineddata" allowed="true" />
+        </fileExtensions>
+      </requestFiltering>
+    </security>
   </system.webServer>
 </configuration>
 '@
