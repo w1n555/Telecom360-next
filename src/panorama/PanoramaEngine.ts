@@ -26,7 +26,13 @@ export class PanoramaEngine {
   private fov = FOV_MAX;
   private offset = new THREE.Vector3();
   private parallaxEnabled = false;
+  /** Currently spinning (may be temporarily false while user interacts). */
   private autorotate = false;
+  /** User wants autorotate on (button/toggle). Survives drag pause. */
+  private autorotateDesired = false;
+  /** Resume spin this many ms after last interrupt when desired is still on. */
+  private static readonly AUTOROTATE_RESUME_MS = 5000;
+  private autorotateResumeTimer: ReturnType<typeof setTimeout> | null = null;
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -87,7 +93,13 @@ export class PanoramaEngine {
     }
   }
 
+  /**
+   * Turn autorotate on/off (user intent).
+   * When on, drag / wheel / keys pause spin; after 5s idle it resumes automatically.
+   */
   setAutorotate(on: boolean) {
+    this.autorotateDesired = on;
+    this.clearAutorotateResumeTimer();
     this.autorotate = on;
   }
 
@@ -95,9 +107,35 @@ export class PanoramaEngine {
     return this.autorotate;
   }
 
-  /** Stop idle spin when user interacts */
+  get isAutorotateDesired() {
+    return this.autorotateDesired;
+  }
+
+  /**
+   * Pause idle spin while user interacts.
+   * If autorotate is still desired, schedules resume after AUTOROTATE_RESUME_MS.
+   */
   interruptAutorotate() {
-    if (this.autorotate) this.autorotate = false;
+    this.autorotate = false;
+    if (this.autorotateDesired && !this.disposed) {
+      this.scheduleAutorotateResume();
+    }
+  }
+
+  private clearAutorotateResumeTimer() {
+    if (this.autorotateResumeTimer != null) {
+      clearTimeout(this.autorotateResumeTimer);
+      this.autorotateResumeTimer = null;
+    }
+  }
+
+  private scheduleAutorotateResume() {
+    this.clearAutorotateResumeTimer();
+    this.autorotateResumeTimer = setTimeout(() => {
+      this.autorotateResumeTimer = null;
+      if (this.disposed || !this.autorotateDesired) return;
+      this.autorotate = true;
+    }, PanoramaEngine.AUTOROTATE_RESUME_MS);
   }
 
   getView(): ViewParams {
@@ -292,6 +330,9 @@ export class PanoramaEngine {
 
   dispose() {
     this.disposed = true;
+    this.clearAutorotateResumeTimer();
+    this.autorotateDesired = false;
+    this.autorotate = false;
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown);
@@ -486,6 +527,7 @@ export class PanoramaEngine {
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
+    this.interruptAutorotate();
     const delta = Math.sign(e.deltaY) * 0.06;
     this.fov = clamp(this.fov + delta, FOV_MIN, FOV_MAX);
     this.applyView();

@@ -157,10 +157,12 @@ npm run iis:setup      # build + stage + IIS site on :8888 only (admin / elevate
 
 Local browser: **http://127.0.0.1:8888/** (Editor) · **http://127.0.0.1:8888/site/.../** (tours)
 
-- **Viewer source:** `src/viewer-main.ts` + `viewer/index.html` (uses `PanoramaEngine`).
+- **Viewer source:** `src/viewer/` (`main.ts`, `ViewerApp.ts`) + `viewer/index.html` (uses `PanoramaEngine`).
+- **Shared:** `src/shared/` (icons, escapeHtml), `src/panorama/PanoramaEngine.ts`.
 - **Export template:** `public/viewer-shell/` and `dist/viewer-shell/` (generated; do not hand-edit).
 - Editor **must be deployed with `viewer-shell/`** so browser export can fetch it.
 - Tour data is **only** in `project.json` (not inlined into HTML).
+- **Autorotate:** toggle on → drag/wheel pauses → resumes after **5 seconds** idle (no need to re-toggle).
 
 ---
 
@@ -327,10 +329,12 @@ npm run iis:setup      # build + 只綁 IIS :8888（要 admin）
 
 本機瀏覽器：**http://127.0.0.1:8888/**
 
-- Viewer 源碼：`src/viewer-main.ts` + `viewer/index.html`
+- Viewer 源碼：`src/viewer/`（`main.ts`、`ViewerApp.ts`）+ `viewer/index.html`
+- 共用：`src/shared/`、`PanoramaEngine`
 - 匯出模板：`viewer-shell/`（build 產物，勿手改）
 - 編輯器部署必須包含 `viewer-shell/`，瀏覽器匯出先 fetch 殼層再打包
 - 導覽資料只在 `project.json`，**不再** inline 進 HTML
+- **自動旋轉：** 開啟後拖拉／滾輪會暫停，**約 5 秒**無操作後自動再轉
 
 ---
 
