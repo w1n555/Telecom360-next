@@ -21,6 +21,21 @@ export function fadeCanvasIn(engine: PanoramaEngine): void {
 }
 
 /**
+ * Aim at hotspot then fade canvas out (no texture load).
+ * Used by Editor when the next scene is loaded via ProjectStore / loadActiveScene.
+ */
+export async function aimAndFadeOut(
+  engine: PanoramaEngine,
+  opts: { yaw: number; pitch: number; aimMs?: number; fadeMs?: number }
+): Promise<void> {
+  const aimMs = opts.aimMs ?? 380;
+  const fadeMs = opts.fadeMs ?? 350;
+  engine.interruptAutorotate();
+  await engine.aimAndZoomIn(opts.yaw, opts.pitch, aimMs);
+  await fadeCanvasOut(engine, fadeMs);
+}
+
+/**
  * Aim at hotspot, fade out, then load next texture URL.
  * Caller is responsible for settleView / hotspot re-enable.
  */
@@ -37,11 +52,12 @@ export async function aimFadeAndLoad(
     transitionMs?: number;
   }
 ): Promise<void> {
-  const aimMs = opts.aimMs ?? 380;
-  const fadeMs = opts.fadeMs ?? 350;
-  engine.interruptAutorotate();
-  await engine.aimAndZoomIn(opts.yaw, opts.pitch, aimMs);
-  await fadeCanvasOut(engine, fadeMs);
+  await aimAndFadeOut(engine, {
+    yaw: opts.yaw,
+    pitch: opts.pitch,
+    aimMs: opts.aimMs,
+    fadeMs: opts.fadeMs,
+  });
   if (opts.mode === 'transition') {
     await engine.transitionToUrl(opts.url, opts.transitionMs ?? 400);
   } else {

@@ -12,7 +12,8 @@
     "start": "node server/preview.mjs",
     "typecheck": "tsc --noEmit",
     "self-check": "node scripts/self_check.mjs",
-    "release": "node scripts/package_release.mjs"
+    "release": "node scripts/package_release.mjs",
+    "release:no-check": "node scripts/package_release.mjs --no-self-check"
   },
   "dependencies": {
     "jszip": "^3.10.1",

@@ -13,6 +13,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Used by prepare_viewer_shell + package_release to resolve full asset graphs.
+    manifest: true,
     // Production / Release ZIPs ship without maps (smaller, no source leakage).
     // Set T360_SOURCEMAP=1 for local dist debugging.
     sourcemap: process.env.T360_SOURCEMAP === '1',
@@ -20,6 +22,12 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         viewer: resolve(__dirname, 'viewer/index.html'),
+      },
+      output: {
+        // Stable, readable shared chunks (helps release packaging + debugging).
+        manualChunks(id) {
+          if (id.includes('node_modules/three')) return 'three';
+        },
       },
     },
   },
