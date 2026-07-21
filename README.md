@@ -3,7 +3,7 @@
 **English** · [中文](#telecom360-next-中文)
 
 360° panorama **editor** and **offline viewer** for site / room walkthroughs.  
-Publish by **exporting a ZIP** and **copying files into the IIS website root** (same approach as legacy Telecom360).
+Deploy with a single **Release ZIP**: download → unzip → **copy into the IIS site root** — ready to use.
 
 | What | URL (example) |
 |------|----------------|
@@ -12,41 +12,42 @@ Publish by **exporting a ZIP** and **copying files into the IIS website root** (
 
 ---
 
-## What this product does
+## Features
 
-- Build multi-scene **equirectangular** tours (including high-res images such as **11904×5952**).
-- Add **info annotations** and **links between scenes**.
-- Set each scene’s **initial view**.
-- Walk slightly in 3D with **WASD / QE** (**always on**, no toggle).
+- Multi-scene **equirectangular** tours (including high-res images such as **11904×5952**).
+- **Info annotations** and **links between scenes**.
+- Per-scene **initial view**.
+- Slight 3D walk with **WASD / QE** (**always on**, no toggle).
 - **Export a self-contained package** (prebuilt Viewer bundle + images; **no CDN**).
-- Deploy by **manual copy** to the IIS site root (often `C:\inetpub\wwwroot`).
+- Host as **static files on IIS** (no Node.js on the server).
 
 UI language: **Traditional Chinese**. Branding: **CLP** logo.
 
 ---
 
-## Deploy (IIS) — copy only
+## Deploy (IIS) — three steps
 
 ### 1. Install / update the Editor
 
-1. Download the official Release package: **`Telecom360-next-vX.Y.Z-iis.zip`**.
+1. Download the official package: **`Telecom360-next-vX.Y.Z-iis.zip`**.
 2. Unzip it.
 3. **Copy all files** into the IIS website physical path (e.g. `C:\inetpub\wwwroot`).
 
-   You must have at least:
+   You should see at least:
 
    | Path | Role |
    |------|------|
    | `index.html` | Editor |
    | `assets\` | Editor JS / CSS |
    | `brand\` | Logos / favicon |
-   | `viewer-shell\` | Prebuilt Viewer template (**required for Export ZIP**) |
+   | `viewer-shell\` | Prebuilt Viewer template (**required for Export ZIP** — do not delete) |
    | `web.config` | MIME for `.json` / `.mjs` / `.wasm` — **already configured** |
 
 4. Open the site in a browser. The Editor is ready.
 
-**No Node.js** on the server. **No scripts** (no PowerShell, no npm).  
-`web.config` is **included in the Release ZIP** — you do not need to configure MIME types yourself.
+**No Node.js** on the server. **No scripts** (no PowerShell, no npm).
+
+**`web.config` and `viewer-shell/` are included in the Release ZIP** — copy once and the site works with zero extra IIS setup. Do not remove `viewer-shell/`; Export ZIP depends on it.
 
 See also [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md).
 
@@ -95,51 +96,18 @@ See also [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md).
 
 ---
 
-## Old Telecom360 → this version
+## Technology
 
-| | Legacy (Marzipano) | Telecom360-next |
-|--|--------------------|---------------------|
-| Engine | Marzipano | **three.js (WebGL 2)** |
-| Implementation | Older stack | **TypeScript** + modern editor UI |
-| Package format | Old ZIP **not compatible** | New package format only |
-| Offline 3D library | Often relied on external/CDN patterns | **Viewer JS bundle** (three.js inside; **no CDN**) |
-| Server publish | Copy into IIS `wwwroot` | **Same: copy files only** (no Node app on the server) |
-| Viewer source | Coupled / duplicated | **Independent `viewer/` entry** + shared `PanoramaEngine` |
-
-### Removed (by design)
-
-- Opening **legacy Marzipano ZIPs**
-- **External URL** hotspots (v1)
-- **Real-world mm measurement** on a single 360° image (no depth data)
-- **Server-side one-click deploy** / production Node deploy API
-
-### Added / improved
-
-| Area | What improved |
-|------|----------------|
-| Editor | Multi-scene list, **drag reorder**, rename / delete |
-| Hotspots | Info pins + scene jump; **draggable** on the panorama |
-| Transitions | Scene change with aim / fade-style transition |
-| 3D move | **Always-on** WASD/QE (limited range); no 3D button |
-| Viewer | Fully offline; **Fullscreen** button; **Auto-rotate** button (**default OFF**) |
-| Required fields | **Project name**, **SITE_CODE**, **ROOM_NAME**, **PHOTO_DATE** |
-| Export path | Matches IIS: `site/{SITE}/{ROOM}/{DATE}/` |
-| Operations | **Copy to IIS only** — no long-running backend process |
-
-### Technology used (summary)
-
-| Layer | Technology |
-|-------|------------|
-| 3D / panorama | **three.js r172** via **WebGL 2** (`PanoramaEngine`, shared) |
+| Layer | Stack |
+|-------|--------|
+| 3D / panorama | **three.js r172** via **WebGL 2** (shared `PanoramaEngine`) |
 | Language | **TypeScript** |
 | Apps | **Editor** (`index.html`) + **Viewer** (`viewer/index.html`) — two Vite entries |
-| Build (by development team) | **Vite 6** → `dist/` + **`viewer-shell/`** + Release ZIP |
+| Build (development team) | **Vite 6** → `dist/` + **`viewer-shell/`** + Release ZIP |
 | Browser export | **JSZip** assembles shell + `project.json` + images (**no runtime HTML generation**) |
 | Hosting | **IIS static files** |
 
----
-
-## Export package layout (tour ZIP from Editor)
+### Export package layout (tour ZIP from Editor)
 
 ```text
 README.txt                          ← at ZIP root
@@ -148,7 +116,7 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
   project.json                      ← single source of tour data
   brand/
   assets/
-    viewer-*.js / PanoramaEngine-*.js / *.css
+    viewer-*.js / shared chunks / *.css
     source/*.jpg
 ```
 
@@ -167,19 +135,19 @@ npm run release    # build + validate dist + zip → release/Telecom360-next-v{v
 
 Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asset. That ZIP is the only install package for IT.
 
-- **Viewer source:** `src/viewer/` (`main.ts`, `ViewerApp.ts`) + `viewer/index.html` (uses `PanoramaEngine`).
-- **Shared:** `src/shared/` (icons, escapeHtml), `src/panorama/PanoramaEngine.ts`.
+- **Viewer source:** `src/viewer/` (`main.ts`, `ViewerApp.ts`) + `viewer/index.html`.
+- **Shared:** `src/shared/`, `src/panorama/PanoramaEngine.ts`.
 - **Export template:** `viewer-shell/` (generated by build; do not hand-edit).
-- Editor **must be deployed with `viewer-shell/`** so browser export can fetch it.
+- Editor deploy **must include `viewer-shell/`** so browser export can fetch it.
 - Tour data is **only** in `project.json` (not inlined into HTML).
-- **Autorotate:** toggle on → drag/wheel pauses → resumes after **5 seconds** idle (no need to re-toggle).
+- **Autorotate:** toggle on → drag/wheel pauses → resumes after **5 seconds** idle.
 - `web.config` lives in `public/` and is copied into `dist/` / the Release ZIP automatically.
 
 ---
 
 ## Notes
 
-- **Browser:** recent **Chrome / Edge** recommended (**WebGL 2** required; WebGL 1 not supported by this three.js version).
+- **Browser:** recent **Chrome / Edge** recommended (**WebGL 2** required).
 - **Private / internal** use. CLP logo and brand assets remain company property.
 
 ---
@@ -187,7 +155,7 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 # Telecom360-next（中文）
 
 360° 全景 **編輯器** 與 **離線檢視器**，用於站點／機房導覽。  
-發佈：**匯出 ZIP** → **複製到 IIS 網站根目錄**（與舊版 Telecom360 一樣靠 copy）。
+部署：下載官方 **Release ZIP** → 解壓 → **複製到 IIS 網站根目錄**，即可使用。
 
 | 項目 | 網址（例子） |
 |------|----------------|
@@ -196,24 +164,24 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 
 ---
 
-## 產品能做什麼
+## 功能
 
 - 建立 **多場景** equirectangular 全景（可含高解像如 **11904×5952**）
 - 加入 **注解標示**、**場景之間跳轉**
 - 設定每場景 **初始視角**
 - 以 **WASD / QE** 輕微 3D 移動（**預設開、無開關掣**）
 - **匯出完整離線套件**（預建 Viewer bundle + 圖片，**不需 CDN**）
-- **人手複製** 到 IIS 網站根（常見 `C:\inetpub\wwwroot`）發佈
+- 以 **IIS 靜態檔** 託管（伺服器不需 Node.js）
 
 介面：**繁體中文**；品牌：**CLP** LOGO。
 
 ---
 
-## 部署（IIS）— 只需 copy
+## 部署（IIS）— 三步完成
 
 ### 1. 安裝／更新編輯器
 
-1. 下載官方 Release：`Telecom360-next-vX.Y.Z-iis.zip`。
+1. 下載官方套件：`Telecom360-next-vX.Y.Z-iis.zip`。
 2. 解壓。
 3. 將**全部檔案**複製到 IIS 網站實體路徑（例如 `C:\inetpub\wwwroot`）。
 
@@ -229,8 +197,9 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 
 4. 瀏覽器開啟網站首頁 → 即可使用。
 
-伺服器**不需要** Node.js，也**不需要**執行任何腳本。  
-`web.config` **已包含在 Release ZIP 內**，一般不用再手動設定 MIME。
+伺服器**不需要** Node.js，也**不需要**執行任何腳本。
+
+**Release ZIP 已包含 `web.config` 與 `viewer-shell/`** — 複製一次即可，IIS 無需額外套 MIME。請勿刪除 `viewer-shell/`，否則「匯出 ZIP」會失敗。
 
 詳見 [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md)。
 
@@ -279,38 +248,7 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 
 ---
 
-## 舊版 → 新版
-
-| | 舊版（Marzipano） | 本版 Telecom360-next |
-|--|-------------------|---------------------------|
-| 引擎 | Marzipano | **three.js（WebGL 2）** |
-| 實作 | 舊技術棧 | **TypeScript** + 新編輯介面 |
-| 套件格式 | 舊 ZIP **不相容** | 僅新格式 |
-| 離線 3D 庫 | 常依賴外網／CDN 模式 | **Viewer JS bundle**（內含 three.js，**無 CDN**） |
-| 上線 | Copy 到 IIS `wwwroot` | **同樣只 copy**（伺服器不必跑 Node） |
-| Viewer 源碼 | 與匯出重複／分叉 | **獨立 `viewer/` entry** + 共用 `PanoramaEngine` |
-
-### 刪除了什麼（刻意）
-
-- 開啟舊 **Marzipano ZIP**
-- **外部網址** 熱點（v1）
-- 單張 360 的 **真實 mm 量測**（無深度）
-- 正式環境 **一鍵部署後端／Node 部署 API**
-
-### 新增多了／更好了什麼
-
-| 範圍 | 說明 |
-|------|------|
-| 編輯器 | 多場景、**拖曳排序**、重新命名／刪除 |
-| 熱點 | 注解 + 跳場景，可拖位置 |
-| 轉場 | 對準／淡入式場景切換 |
-| 3D 移動 | WASD/QE **預設開**（無 3D 掣） |
-| 檢視器 | 全離線；**全螢幕**掣；**自動旋轉**掣（**預設關**） |
-| 必填欄位 | **專案名稱**、SITE、ROOM、DATE |
-| 匯出路徑 | 對齊 IIS：`site/{SITE}/{ROOM}/{DATE}/` |
-| 維運 | **只需 copy 到 IIS**，不用長期開後台程式 |
-
-### 用了什麼技術（摘要）
+## 技術
 
 | 層級 | 技術 |
 |------|------|
@@ -318,12 +256,10 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 | 語言 | **TypeScript** |
 | 應用 | **編輯器** + **檢視器**（兩個 Vite entry） |
 | 建置（由開發團隊） | **Vite 6** → `dist/` + **`viewer-shell/`** + Release ZIP |
-| 瀏覽器匯出 | **JSZip** 組裝 shell + `project.json` + 圖片（**不再 runtime 砌 HTML**） |
+| 瀏覽器匯出 | **JSZip** 組裝 shell + `project.json` + 圖片（**不 runtime 砌 HTML**） |
 | 上線 | **IIS 靜態網站** |
 
----
-
-## 匯出套件結構（編輯器「匯出 ZIP」）
+### 匯出套件結構（編輯器「匯出 ZIP」）
 
 ```text
 README.txt                          ← ZIP 根目錄
@@ -332,7 +268,7 @@ site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
   project.json                      ← 導覽資料唯一來源
   brand/
   assets/
-    viewer-*.js / PanoramaEngine-*.js / *.css
+    viewer-*.js / 共用 chunk / *.css
     source/*.jpg
 ```
 
@@ -355,13 +291,13 @@ npm run release    # build + 校驗 dist + 打包 → release/Telecom360-next-v{
 - 共用：`src/shared/`、`PanoramaEngine`
 - 匯出模板：`viewer-shell/`（build 產物，勿手改）
 - 編輯器部署必須包含 `viewer-shell/`
-- 導覽資料只在 `project.json`，**不再** inline 進 HTML
+- 導覽資料只在 `project.json`，不 inline 進 HTML
 - `web.config` 放在 `public/`，會自動進入 `dist/` 與 Release ZIP
 - **自動旋轉：** 開啟後拖拉／滾輪會暫停，約 5 秒無操作後自動再轉
 
 ---
 
-## 其他
+## 注意
 
-- **瀏覽器：** 建議新版 Chrome / Edge（需 **WebGL 2**；本版 three.js **不支援 WebGL 1**）。
+- **瀏覽器：** 建議新版 Chrome / Edge（需 **WebGL 2**）。
 - **內部使用。** CLP LOGO 與品牌資產屬公司所有。

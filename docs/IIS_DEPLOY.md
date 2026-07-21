@@ -4,6 +4,8 @@
 
 給 **一般使用者／IT**：**下載 → 解壓 → 複製檔案**。伺服器不必安裝 Node.js，也**不需要**執行任何腳本。
 
+Release ZIP **已包含 `web.config` 與 `viewer-shell/`** — 複製到 IIS 根目錄即可使用，無需額外套 MIME。
+
 ---
 
 ## 中文
@@ -69,15 +71,17 @@ http://{伺服器}/site/{SITE_CODE}/{ROOM_NAME}/{PHOTO_DATE}/
 ### 5. 注意
 
 - 伺服器 **不需要** Node.js。
-- 舊版 Marzipano ZIP **不能**用於本版。
-- 瀏覽器需支援 **WebGL 2**。
+- 瀏覽器需支援 **WebGL 2**（建議 Chrome / Edge）。
 - 編輯器目錄必須包含 **`viewer-shell\`**，否則「匯出 ZIP」會失敗。
+- 請勿刪除 **`web.config`**，否則 `.json` 可能無法正確載入。
 
 ---
 
 ## IIS install & publish
 
 For **end users / IT**: **download → unzip → copy**. **No Node.js** on the server. **No scripts.**
+
+The Release ZIP **includes `web.config` and `viewer-shell/`** — copy into the IIS root and use immediately; no extra MIME setup.
 
 ### 1. Install the Editor on IIS
 
@@ -140,6 +144,6 @@ Overwrite the site root with a newer `Telecom360-next-vX.Y.Z-iis.zip`. Keep exis
 ### 5. Notes
 
 - **No Node.js** required on the server.
-- Legacy Marzipano ZIP is **not** supported.
-- Browsers need **WebGL 2**.
+- Browsers need **WebGL 2** (Chrome / Edge recommended).
 - Editor deploy **must include `viewer-shell\`**, or **Export ZIP** will fail.
+- Do not remove **`web.config`**, or `.json` may fail to load correctly.
