@@ -12,27 +12,22 @@ import {
   type SceneHotspot,
 } from '../core/types/project';
 import { escapeHtml } from '../shared/escapeHtml';
-import {
-  createHotspotPinElement,
-  fillEditorPin,
-  positionPin,
-  setPinTypeClasses,
-  syncPinLabel,
-} from '../shared/hotspotDom';
-import { fadeCanvasIn, fadeCanvasOut } from '../shared/sceneTransition';
+import { aimAndFadeOut, fadeCanvasIn } from '../shared/sceneTransition';
+import { editorShellHtml } from './editor/shellHtml';
+import { HotspotOverlay } from './editor/HotspotOverlay';
+import { InspectorPanel } from './editor/InspectorPanel';
 
 export class EditorApp {
   private root: HTMLElement;
   private engine: PanoramaEngine | null = null;
   private stageEl: HTMLElement | null = null;
   private hotspotLayer: HTMLElement | null = null;
+  private hotspots: HotspotOverlay | null = null;
+  private inspector: InspectorPanel | null = null;
   private draggingHotspotId: string | null = null;
   private unsub: (() => void) | null = null;
   private overlayRaf = 0;
-  private inspectorKey = '';
   private lastActiveId: string | null = null;
-  /** Hide hotspots until panorama texture + camera view have settled */
-  private hotspotsReady = false;
   /** Avoid resetting prompt input on every syncUi tick */
   private promptFocusKey = '';
 
@@ -56,92 +51,31 @@ export class EditorApp {
   }
 
   private renderShell() {
-    this.root.innerHTML = `
-      <div class="app-shell">
-        <header class="header">
-          <div class="logo-wrap" title="CLP">
-            <img class="logo" src="/brand/clp-dark.png" alt="CLP" />
-          </div>
-          <div class="brand-text">Telecom360-next</div>
-          <div class="spacer"></div>
-          <button type="button" class="btn" id="btn-import">${t('openPackage')}</button>
-          <button type="button" class="btn primary" id="btn-export">${t('exportZip')}</button>
-          <input type="file" id="file-import" class="sr-file" accept=".zip,application/zip" tabindex="-1" />
-          <input type="file" id="file-scenes" class="sr-file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple tabindex="-1" />
-        </header>
-        <div class="main">
-          <aside class="sidebar">
-            <h2>${t('projectName')} *</h2>
-            <div class="project-name-row">
-              <input id="project-name" type="text" required placeholder="${t('projectNameHint')}" autocomplete="off" />
-            </div>
-            <div class="meta-fields">
-              <label>${t('siteCode')} *
-                <input id="f-site" type="text" required placeholder="e.g. FOS" autocomplete="off" />
-              </label>
-              <label>${t('roomName')} *
-                <input id="f-room" type="text" required placeholder="e.g. Control_Room" autocomplete="off" />
-              </label>
-              <label>${t('photoDate')} *
-                <input id="f-date" type="text" required placeholder="e.g. 20260423" autocomplete="off" />
-              </label>
-            </div>
-            <h2>${t('scenes')}</h2>
-            <ul class="scene-list" id="scene-list"></ul>
-            <div class="add-files">
-              <button type="button" class="btn ghost-dark btn-upload-cta" id="btn-add-scenes" style="width:100%">${t('addScenes')}</button>
-            </div>
-            <p class="hint" id="hint-empty-scenes">${t('noScenes')}</p>
-            <p class="hint" id="hint-drag" hidden>拖曳 ⋮⋮ 可調整列表順序</p>
-          </aside>
-          <section class="stage-wrap">
-            <div class="stage-toolbar">
-              <button type="button" class="btn" id="btn-info">${t('addInfo')}</button>
-              <button type="button" class="btn" id="btn-scene-hs">${t('addSceneLink')}</button>
-              <button type="button" class="btn" id="btn-initial">${t('setInitialView')}</button>
-              <span class="toolbar-hint" id="controls-hint">${t('controlsHint')}</span>
-            </div>
-            <div id="stage">
-              <div class="stage-empty" id="stage-empty">${t('noScenes')}</div>
-              <div class="hotspot-layer" id="hotspot-layer"></div>
-            </div>
-          </section>
-          <aside class="inspector">
-            <h2>${t('inspector')}</h2>
-            <div id="inspector-body"><p class="hint">${t('noSelection')}</p></div>
-          </aside>
-        </div>
-        <div class="toast" id="toast" hidden></div>
-        <!-- One overlay for loading % AND success message (no browser native dialogs) -->
-        <div class="busy" id="busy" hidden>
-          <div class="busy-card">
-            <div id="busy-mode-progress">
-              <div id="busy-text" class="busy-text"></div>
-              <div class="busy-bar-track"><div id="busy-bar" class="busy-bar"></div></div>
-              <div id="busy-pct" class="busy-pct">0%</div>
-            </div>
-            <div id="busy-mode-result" class="busy-result" hidden>
-              <div id="busy-result-title" class="msg-modal-title"></div>
-              <div id="busy-result-body" class="msg-modal-body"></div>
-              <div id="busy-result-link" class="msg-modal-link" tabindex="0"></div>
-              <button type="button" class="btn primary msg-modal-ok" id="busy-result-ok">${t('ok')}</button>
-            </div>
-            <div id="busy-mode-prompt" class="busy-prompt" hidden>
-              <div id="busy-prompt-title" class="msg-modal-title is-info"></div>
-              <div id="busy-prompt-body" class="msg-modal-body"></div>
-              <input type="text" id="busy-prompt-input" class="msg-modal-input" autocomplete="off" />
-              <div class="msg-modal-actions">
-                <button type="button" class="btn ghost-dark" id="busy-prompt-cancel">${t('cancel')}</button>
-                <button type="button" class="btn primary" id="busy-prompt-ok">${t('ok')}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+    this.root.innerHTML = editorShellHtml();
 
     this.stageEl = this.root.querySelector('#stage');
     this.hotspotLayer = this.root.querySelector('#hotspot-layer');
+    this.hotspots = new HotspotOverlay(
+      this.hotspotLayer!,
+      () => this.engine,
+      {
+        onDragStart: (id) => {
+          this.draggingHotspotId = id;
+          this.inspector?.invalidateKey();
+        },
+        onDragEnd: () => {
+          this.draggingHotspotId = null;
+        },
+        onSelect: () => {
+          this.inspector?.invalidateKey();
+        },
+      }
+    );
+    this.inspector = new InspectorPanel(this.root.querySelector('#inspector-body') as HTMLElement, {
+      onGoToScene: (h) => void this.goToScene(h),
+      onInspectorKeyInvalidate: () => this.inspector?.invalidateKey(),
+      getEngine: () => this.engine,
+    });
 
     this.root.querySelector('#busy-result-ok')!.addEventListener('click', (ev) => {
       ev.preventDefault();
@@ -222,8 +156,6 @@ export class EditorApp {
   }
 
   private bindGlobal() {
-    // Suppress leave warning while deploy/export busy or result overlay open
-    // (native beforeunload dialog looks like a "browser message box" and confuses users)
     window.addEventListener('beforeunload', (e) => {
       if (store.ui.busyMessage) return;
       const busy = this.root.querySelector('#busy');
@@ -277,8 +209,7 @@ export class EditorApp {
   }
 
   private clearHotspotLayer() {
-    this.hotspotsReady = false;
-    if (this.hotspotLayer) this.hotspotLayer.innerHTML = '';
+    this.hotspots?.clear();
   }
 
   private commitPromptDialog() {
@@ -297,19 +228,18 @@ export class EditorApp {
     }
     if (prompt.context.type === 'delete-scene') {
       store.removeScene(prompt.context.sceneId);
-      this.inspectorKey = '';
+      this.inspector?.invalidateKey();
       return;
     }
     if (prompt.context.type === 'delete-hotspot') {
       store.removeHotspot(prompt.context.hotspotId);
-      this.inspectorKey = '';
+      this.inspector?.invalidateKey();
     }
   }
 
   private async loadActiveScene(transition: boolean) {
     const scene = store.activeScene;
     if (!scene || !this.engine) return;
-    // Hide icons immediately — show only after image + view are ready
     this.clearHotspotLayer();
     this.engine.setSettings(store.project.settings);
     this.engine.setParallaxEnabled(store.ui.parallaxEnabled);
@@ -319,16 +249,15 @@ export class EditorApp {
       } else {
         await this.engine.loadTextureFromUrl(scene.source.url);
       }
-      // Image ready → apply initial view → then allow icons
       await this.engine.settleView(scene.initialView);
-      if (store.activeScene?.id === scene.id) {
-        this.hotspotsReady = true;
-        this.drawHotspots();
+      if (store.activeScene?.id === scene.id && this.hotspots) {
+        this.hotspots.ready = true;
+        this.hotspots.draw();
       }
     } catch (err) {
       console.error(err);
       store.setToast(String((err as Error).message || err));
-      this.hotspotsReady = true;
+      if (this.hotspots) this.hotspots.ready = true;
     }
   }
 
@@ -344,26 +273,43 @@ export class EditorApp {
     setIfBlurred('#f-room', p.deploy.roomName);
     setIfBlurred('#f-date', p.deploy.photoDate);
 
-    // 3D always on (no toggle) — keep engine in sync
     if (!ui.parallaxEnabled) store.setParallaxEnabled(true);
 
     const empty = this.root.querySelector('#stage-empty') as HTMLElement | null;
     if (empty) empty.hidden = p.scenes.length > 0;
-    // Sidebar empty-state hints: only when no scenes
     const hintEmpty = this.root.querySelector('#hint-empty-scenes') as HTMLElement | null;
     const hintDrag = this.root.querySelector('#hint-drag') as HTMLElement | null;
     if (hintEmpty) hintEmpty.hidden = p.scenes.length > 0;
     if (hintDrag) hintDrag.hidden = p.scenes.length === 0;
-    // Pulse upload CTA when project has no panoramas yet
     const uploadBtn = this.root.querySelector('#btn-add-scenes') as HTMLButtonElement | null;
     if (uploadBtn) {
-      const empty = p.scenes.length === 0;
-      uploadBtn.classList.toggle('is-cta-pulse', empty);
+      const isEmpty = p.scenes.length === 0;
+      uploadBtn.classList.toggle('is-cta-pulse', isEmpty);
       uploadBtn.classList.toggle('btn-upload-cta', true);
-      // Keep accessible hint for empty project
-      uploadBtn.title = empty ? '按此開始：上傳全景圖片' : '';
+      uploadBtn.title = isEmpty ? '按此開始：上傳全景圖片' : '';
     }
 
+    this.renderSceneList();
+    this.syncBusyOverlay();
+    this.inspector?.render();
+    this.engine?.setParallaxEnabled(ui.parallaxEnabled);
+
+    if (ui.activeSceneId !== this.lastActiveId) {
+      const useTransition = this.lastActiveId != null && ui.activeSceneId != null;
+      this.lastActiveId = ui.activeSceneId;
+      if (!ui.activeSceneId) {
+        this.engine?.clearTexture();
+        this.clearHotspotLayer();
+      } else {
+        this.clearHotspotLayer();
+        void this.loadActiveScene(useTransition);
+      }
+    }
+  }
+
+  private renderSceneList() {
+    const p = store.project;
+    const ui = store.ui;
     const list = this.root.querySelector('#scene-list')!;
     list.innerHTML = p.scenes
       .map(
@@ -437,8 +383,10 @@ export class EditorApp {
         store.moveScene(from, to);
       });
     });
+  }
 
-    // Corner toast retired — all notices use center modal (#busy result mode)
+  private syncBusyOverlay() {
+    const ui = store.ui;
     const toast = this.root.querySelector('#toast') as HTMLElement | null;
     if (toast) toast.hidden = true;
 
@@ -452,14 +400,12 @@ export class EditorApp {
     const prompt = ui.promptDialog;
 
     if (ui.busyMessage) {
-      // Progress mode
       busy.hidden = false;
       busy.classList.add('is-on');
       if (modeProgress) modeProgress.hidden = false;
       if (modeResult) modeResult.hidden = true;
       if (modePrompt) modePrompt.hidden = true;
       const pct = ui.busyPercent ?? 0;
-      // Keep % on the progress bar label only when message has no multi-line detail
       const base = ui.busyMessage || '';
       const label =
         ui.busyPercent != null && !base.includes('\n')
@@ -472,7 +418,6 @@ export class EditorApp {
       pctEl.textContent = ui.busyPercent != null ? `${pct}%` : '';
       pctEl.hidden = ui.busyPercent == null;
     } else if (prompt) {
-      // In-app prompt / confirm — same overlay style as message box
       busy.hidden = false;
       busy.classList.add('is-on');
       if (modeProgress) modeProgress.hidden = true;
@@ -518,7 +463,6 @@ export class EditorApp {
         }
       }
     } else if (result) {
-      // Center modal (success / error / info) — must press 確定
       this.promptFocusKey = '';
       busy.hidden = false;
       busy.classList.add('is-on');
@@ -579,197 +523,19 @@ export class EditorApp {
       if (modeResult) modeResult.hidden = true;
       if (modePrompt) modePrompt.hidden = true;
     }
-
-    this.renderInspector();
-    this.engine?.setParallaxEnabled(ui.parallaxEnabled);
-
-    if (ui.activeSceneId !== this.lastActiveId) {
-      const useTransition = this.lastActiveId != null && ui.activeSceneId != null;
-      this.lastActiveId = ui.activeSceneId;
-      if (!ui.activeSceneId) {
-        this.engine?.clearTexture();
-        this.clearHotspotLayer();
-      } else {
-        // Clear icons before async load so they never lead the new panorama
-        this.clearHotspotLayer();
-        void this.loadActiveScene(useTransition);
-      }
-    }
-  }
-
-  private renderInspector() {
-    const body = this.root.querySelector('#inspector-body') as HTMLElement;
-    const scene = store.activeScene;
-    const hs = scene?.hotspots.find((h) => h.id === store.ui.selectedHotspotId);
-    // Include scene names so target dropdown refreshes after rename
-    const namesSig = store.project.scenes.map((s) => `${s.id}=${s.name}`).join('|');
-    const key = `${store.ui.activeSceneId}|${store.ui.selectedHotspotId}|${namesSig}`;
-    if (key === this.inspectorKey && body.childElementCount > 0) {
-      // Live-refresh target dropdown labels without remounting (keeps selection / focus)
-      this.refreshTargetDropdownLabels();
-      return;
-    }
-    this.inspectorKey = key;
-
-    if (!scene) {
-      body.innerHTML = `<p class="hint">${t('noScenes')}</p>`;
-      this.engine?.clearTexture();
-      return;
-    }
-    if (!hs) {
-      body.innerHTML = `<p class="hint">${t('noSelection')}</p>`;
-      return;
-    }
-
-    if (hs.type === 'info') {
-      body.innerHTML = `
-        <p class="hint">注解標示 · 可在預覽拖曳位置 · 檢視器滑鼠移上圖示顯示內容</p>
-        <label>${t('title')}<input id="hs-title" value="${escapeAttr(hs.title)}" placeholder="" autocomplete="off" /></label>
-        <label>${t('text')}<textarea id="hs-text" placeholder="">${escapeHtml(hs.text)}</textarea></label>
-        <div style="margin-top:12px">
-          <button type="button" class="btn ghost-dark" id="hs-del">${t('delete')}</button>
-        </div>
-      `;
-      body.querySelector('#hs-title')!.addEventListener('input', (e) => {
-        store.updateHotspot(hs.id, { title: (e.target as HTMLInputElement).value }, { silent: true });
-      });
-      body.querySelector('#hs-text')!.addEventListener('input', (e) => {
-        store.updateHotspot(hs.id, { text: (e.target as HTMLTextAreaElement).value }, { silent: true });
-      });
-    } else {
-      const options = store.project.scenes
-        .filter((s) => s.id !== scene.id)
-        .map(
-          (s) =>
-            `<option value="${s.id}" ${s.id === hs.targetSceneId ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
-        )
-        .join('');
-      body.innerHTML = `
-        <p class="hint">場景連結 · 點圖示只選取；用下方按鈕前往</p>
-        <label>${t('selectTarget')}
-          <select id="hs-target">
-            <option value="">${t('emptyTarget')}</option>
-            ${options}
-          </select>
-        </label>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" class="btn primary" id="hs-go">${t('goToScene')}</button>
-          <button type="button" class="btn ghost-dark" id="hs-del">${t('delete')}</button>
-        </div>
-      `;
-      body.querySelector('#hs-target')!.addEventListener('change', (e) => {
-        store.updateHotspot(hs.id, { targetSceneId: (e.target as HTMLSelectElement).value });
-        this.inspectorKey = '';
-      });
-      body.querySelector('#hs-go')!.addEventListener('click', () => {
-        void this.goToScene(hs as SceneHotspot);
-      });
-    }
-    body.querySelector('#hs-del')!.addEventListener('click', () => {
-      // Match 刪除全景 style: confirm text + named item line
-      let detailLine = '';
-      if (hs.type === 'info') {
-        const name = (hs.title || '').trim() || '（未命名注解）';
-        detailLine = `標註：${name}`;
-      } else {
-        const tgt = store.project.scenes.find((s) => s.id === hs.targetSceneId);
-        const name = tgt?.name?.trim() || '（未選擇目標場景）';
-        detailLine = `目標場景：${name}`;
-      }
-      store.showPromptDialog({
-        title: t('deleteHotspotTitle'),
-        body: `${t('confirmDeleteHotspot')}\n\n${detailLine}`,
-        showInput: false,
-        danger: true,
-        okLabel: t('deleteConfirm'),
-        context: { type: 'delete-hotspot', hotspotId: hs.id },
-      });
-    });
-  }
-
-  /** Update「選擇目標場景」option text when scenes are renamed (without full remount). */
-  private refreshTargetDropdownLabels() {
-    const sel = this.root.querySelector('#hs-target') as HTMLSelectElement | null;
-    if (!sel) return;
-    const scene = store.activeScene;
-    if (!scene) return;
-    for (const opt of Array.from(sel.options)) {
-      if (!opt.value) {
-        opt.textContent = t('emptyTarget');
-        continue;
-      }
-      const s = store.project.scenes.find((x) => x.id === opt.value);
-      if (s) opt.textContent = s.name;
-    }
   }
 
   private loopOverlays = () => {
     this.overlayRaf = requestAnimationFrame(this.loopOverlays);
-    this.drawHotspots();
+    this.hotspots?.draw();
   };
-
-  private drawHotspots() {
-    if (!this.engine || !this.hotspotLayer) return;
-    const scene = store.activeScene;
-    if (!scene || !this.hotspotsReady) {
-      if (!this.hotspotsReady && this.hotspotLayer.childElementCount) {
-        this.hotspotLayer.innerHTML = '';
-      }
-      if (!scene) this.hotspotLayer.innerHTML = '';
-      return;
-    }
-    const existing = new Map(
-      [...this.hotspotLayer.querySelectorAll('.hotspot-pin')].map((el) => [
-        (el as HTMLElement).dataset.id!,
-        el as HTMLElement,
-      ])
-    );
-    const keep = new Set<string>();
-    for (const h of scene.hotspots) {
-      keep.add(h.id);
-      let el = existing.get(h.id);
-      if (!el) {
-        el = createHotspotPinElement(h);
-        fillEditorPin(el, h);
-        el.addEventListener('pointerdown', (ev) => {
-          ev.stopPropagation();
-          this.draggingHotspotId = h.id;
-          this.inspectorKey = '';
-          store.selectHotspot(h.id);
-          (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
-        });
-        el.addEventListener('pointerup', (ev) => {
-          ev.stopPropagation();
-          this.draggingHotspotId = null;
-        });
-        el.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this.inspectorKey = '';
-          store.selectHotspot(h.id);
-        });
-        this.hotspotLayer.appendChild(el);
-      }
-      const tgt =
-        h.type === 'scene'
-          ? store.project.scenes.find((s) => s.id === (h as SceneHotspot).targetSceneId)
-          : undefined;
-      setPinTypeClasses(el, h, store.ui.selectedHotspotId === h.id);
-      syncPinLabel(el, h, tgt?.name);
-      positionPin(el, this.engine.projectToScreen(h.yaw, h.pitch));
-    }
-    for (const [id, el] of existing) {
-      if (!keep.has(id)) el.remove();
-    }
-  }
 
   private async goToScene(h: SceneHotspot) {
     if (!h.targetSceneId || !this.engine) return;
-    // Hide old icons immediately (before zoom / fade) for cleaner UX
     this.clearHotspotLayer();
-    await this.engine.aimAndZoomIn(h.yaw, h.pitch, 380);
-    await fadeCanvasOut(this.engine, 350);
+    await aimAndFadeOut(this.engine, { yaw: h.yaw, pitch: h.pitch });
     store.selectScene(h.targetSceneId);
-    // loadActiveScene will re-enable icons after new image settles
+    // loadActiveScene re-enables icons after new image settles
     await new Promise((r) => setTimeout(r, 80));
     fadeCanvasIn(this.engine);
   }
@@ -801,7 +567,6 @@ export class EditorApp {
     return true;
   }
 
-  /** Current scene label for toast / dialog (name + file if available). */
   private activeSceneLabel(): string {
     const s = store.activeScene;
     if (!s) return '';
@@ -941,7 +706,6 @@ export class EditorApp {
       const fileName = suggestZipName(store.project);
       const d = store.project.deploy;
       const pathHint = `site/${encodeURIComponent(d.siteCode.trim())}/${encodeURIComponent(d.roomName.trim())}/${encodeURIComponent(d.photoDate.trim())}/`;
-      // Prefer current browser host (IP or hostname) so the link is ready to copy
       const hostBase =
         typeof location !== 'undefined' && location.origin
           ? location.origin.replace(/\/$/, '')

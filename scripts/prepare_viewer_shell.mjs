@@ -8,12 +8,24 @@
  *   brand/*             (favicon / logo referenced by shell)
  *   manifest.json       (file list for ExportService)
  *
+ * Asset discovery (robust, in order):
+ *   1) Vite build.manifest entry for viewer/index.html (imports / css / dynamicImports)
+ *   2) HTML src|href (+ modulepreload)
+ *   3) Walk ESM import graph from entry JS (catches nested chunks without preload)
+ *
  * ExportService fetches /viewer-shell/* at runtime and copies them into each tour ZIP
  * alongside project.json + assets/source/*.jpg — no runtime HTML generation.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  collectHtmlRefs,
+  collectManifestEntryAssets,
+  loadViteManifest,
+  resolveFromHtmlPage,
+  walkJsImportGraph,
+} from './asset_graph.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -30,29 +42,6 @@ function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function collectHtmlRefs(html) {
-  const refs = new Set();
-  const re = /(?:src|href)=["']([^"']+)["']/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    const u = m[1].trim();
-    if (!u || u.startsWith('data:') || u.startsWith('http:') || u.startsWith('https:') || u.startsWith('//') || u.startsWith('#')) {
-      continue;
-    }
-    refs.add(u);
-  }
-  return [...refs];
-}
-
-/** Resolve a path relative to dist/viewer/index.html → absolute file under dist/ */
-function resolveFromViewerHtml(rel) {
-  const abs = path.normalize(path.join(DIST, 'viewer', rel));
-  if (!abs.startsWith(DIST)) {
-    throw new Error(`Ref escapes dist: ${rel}`);
-  }
-  return abs;
-}
-
 function rewriteHtml(html) {
   // Vite multi-page viewer lives in dist/viewer/ so assets are ../assets and ../brand
   return html
@@ -67,6 +56,13 @@ function copyFile(from, to) {
   fs.copyFileSync(from, to);
 }
 
+function toShellPath(relFromDist) {
+  const rel = relFromDist.replace(/\\/g, '/');
+  if (rel.startsWith('assets/')) return rel;
+  if (rel.startsWith('brand/')) return rel;
+  return `assets/${path.basename(rel)}`;
+}
+
 function writeShell(outRoot, html, fileEntries) {
   rmrf(outRoot);
   ensureDir(outRoot);
@@ -74,8 +70,7 @@ function writeShell(outRoot, html, fileEntries) {
 
   for (const { abs, shellPath } of fileEntries) {
     if (shellPath === 'index.html') continue;
-    const dest = path.join(outRoot, shellPath);
-    copyFile(abs, dest);
+    copyFile(abs, path.join(outRoot, shellPath));
   }
 
   const manifest = {
@@ -87,7 +82,6 @@ function writeShell(outRoot, html, fileEntries) {
       ...fileEntries.map((e) => ({ path: e.shellPath })),
     ],
   };
-  // de-dupe paths
   const seen = new Set();
   manifest.files = manifest.files.filter((f) => {
     if (seen.has(f.path)) return false;
@@ -104,25 +98,69 @@ function main() {
   }
 
   let html = fs.readFileSync(VIEWER_HTML, 'utf8');
-  const refs = collectHtmlRefs(html);
-  const fileEntries = [];
+  const htmlDir = path.dirname(VIEWER_HTML);
+  const distRelFiles = new Set(); // paths relative to dist/
+  const sources = [];
 
-  for (const ref of refs) {
-    const abs = resolveFromViewerHtml(ref);
-    if (!fs.existsSync(abs)) {
-      console.warn('[prepare_viewer_shell] skip missing ref:', ref);
+  // 1) Vite manifest graph (preferred)
+  const viteMan = loadViteManifest(DIST);
+  if (viteMan) {
+    const keys = Object.keys(viteMan.data);
+    const viewerKey =
+      keys.find((k) => k === 'viewer/index.html' || k.endsWith('/viewer/index.html')) ||
+      keys.find((k) => /viewer\/index\.html$/i.test(k));
+    if (viewerKey) {
+      const fromMan = collectManifestEntryAssets(viteMan.data, viewerKey);
+      for (const rel of fromMan) distRelFiles.add(rel);
+      sources.push(`vite-manifest:${viewerKey} (${fromMan.size})`);
+    } else {
+      console.warn('[prepare_viewer_shell] vite manifest has no viewer/index.html entry');
+    }
+  } else {
+    console.warn('[prepare_viewer_shell] no Vite manifest — falling back to HTML + JS walk');
+  }
+
+  // 2) HTML refs (script / link / modulepreload / favicon)
+  for (const ref of collectHtmlRefs(html)) {
+    try {
+      const abs = resolveFromHtmlPage(DIST, htmlDir, ref);
+      if (!fs.existsSync(abs) || abs.endsWith('.map')) continue;
+      distRelFiles.add(path.relative(DIST, abs).replace(/\\/g, '/'));
+    } catch (e) {
+      console.warn('[prepare_viewer_shell] skip bad HTML ref:', ref, e.message);
+    }
+  }
+  sources.push(`html-refs`);
+
+  // 3) Walk JS import graph from every .js already collected (and entry scripts in HTML)
+  const jsSeeds = [...distRelFiles].filter((r) => /\.m?js$/i.test(r));
+  for (const ref of collectHtmlRefs(html)) {
+    if (/\.m?js$/i.test(ref)) {
+      try {
+        const abs = resolveFromHtmlPage(DIST, htmlDir, ref);
+        if (fs.existsSync(abs)) jsSeeds.push(path.relative(DIST, abs).replace(/\\/g, '/'));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  for (const seed of jsSeeds) {
+    const abs = path.join(DIST, seed);
+    if (fs.existsSync(abs)) {
+      walkJsImportGraph(abs, DIST, distRelFiles);
+    }
+  }
+  sources.push(`js-import-walk`);
+
+  const fileEntries = [];
+  for (const rel of distRelFiles) {
+    if (rel.endsWith('.map')) continue;
+    const abs = path.join(DIST, rel);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+      console.warn('[prepare_viewer_shell] missing asset:', rel);
       continue;
     }
-    // skip source maps in package (smaller ZIP; not needed offline)
-    if (abs.endsWith('.map')) continue;
-
-    const relFromDist = path.relative(DIST, abs).replace(/\\/g, '/');
-    let shellPath;
-    if (relFromDist.startsWith('assets/')) shellPath = relFromDist;
-    else if (relFromDist.startsWith('brand/')) shellPath = relFromDist;
-    else shellPath = `assets/${path.basename(abs)}`;
-
-    fileEntries.push({ abs, shellPath, ref });
+    fileEntries.push({ abs, shellPath: toShellPath(rel), ref: rel });
   }
 
   // Always include brand assets viewer may load at runtime (relative brand/…)
@@ -134,9 +172,13 @@ function main() {
       if (name === '.gitkeep') continue;
       const shellPath = `brand/${name}`;
       if (!fileEntries.some((e) => e.shellPath === shellPath)) {
-        fileEntries.push({ abs, shellPath, ref: `../brand/${name}` });
+        fileEntries.push({ abs, shellPath, ref: `brand/${name}` });
       }
     }
+  }
+
+  if (!fileEntries.some((e) => e.shellPath.startsWith('assets/') && e.shellPath.endsWith('.js'))) {
+    throw new Error('[prepare_viewer_shell] no viewer JS assets collected — build may be broken');
   }
 
   html = rewriteHtml(html);
@@ -144,6 +186,7 @@ function main() {
   const manDist = writeShell(OUT_DIST, html, fileEntries);
   const manPub = writeShell(OUT_PUBLIC, html, fileEntries);
 
+  console.log('[prepare_viewer_shell] sources:', sources.join(', '));
   console.log('[prepare_viewer_shell] wrote', OUT_DIST);
   console.log('[prepare_viewer_shell] wrote', OUT_PUBLIC);
   console.log(
