@@ -71,9 +71,7 @@ export class ViewerApp {
     const settings = {
       ...defaultSettings(),
       ...project.settings,
-      fullscreenButton: true,
       defaultParallaxEnabled: true,
-      autorotateEnabled: false,
     };
     this.engine = new PanoramaEngine(stage, settings);
     this.engine.setParallaxEnabled(true);

@@ -2,6 +2,8 @@ import JSZip from 'jszip';
 import {
   PACKAGE_FORMAT,
   PACKAGE_VERSION,
+  sanitizeHotspot,
+  sanitizeSettings,
   type ProjectDocument,
   type ProjectPackage,
   type Scene,
@@ -22,13 +24,13 @@ function cloneProjectForPackage(project: ProjectDocument, opts?: { keepDataUrl?:
     return {
       ...s,
       source,
-      hotspots: s.hotspots.map((h) => ({ ...h })),
+      hotspots: s.hotspots.map((h) => sanitizeHotspot(h)),
     };
   });
   return {
     ...project,
     scenes,
-    settings: { ...project.settings },
+    settings: sanitizeSettings(project.settings),
     deploy: { ...project.deploy },
   };
 }
@@ -38,8 +40,6 @@ function projectForViewer(project: ProjectDocument): ProjectDocument {
   const doc = cloneProjectForPackage(project, { keepDataUrl: false });
   doc.settings = {
     ...doc.settings,
-    autorotateEnabled: false,
-    fullscreenButton: true,
     defaultParallaxEnabled: true,
   };
   return doc;

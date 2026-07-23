@@ -6,6 +6,8 @@ import {
   type Scene,
   type ViewParams,
   emptyProject,
+  sanitizeHotspot,
+  sanitizeSettings,
 } from '../types/project';
 
 type Listener = () => void;
@@ -90,19 +92,18 @@ export class ProjectStore {
   setProject(doc: ProjectDocument) {
     this.project = {
       ...doc,
-      scenes: doc.scenes.map((s) => ({
-        ...s,
-        // drop legacy measurements field if present
-        hotspots: s.hotspots.map((h) => ({ ...h })),
-      })),
+      settings: sanitizeSettings(doc.settings),
+      scenes: doc.scenes.map((s) => {
+        const { measurements: _drop, ...sceneRest } = s as Scene & { measurements?: unknown };
+        return {
+          ...sceneRest,
+          hotspots: (s.hotspots || []).map((h) => sanitizeHotspot(h)),
+        };
+      }),
     };
-    // ensure no measurements key left on scenes
-    for (const s of this.project.scenes) {
-      delete (s as { measurements?: unknown }).measurements;
-    }
     this.ui.activeSceneId = doc.scenes[0]?.id ?? null;
     this.ui.selectedHotspotId = null;
-    this.ui.parallaxEnabled = doc.settings.defaultParallaxEnabled;
+    this.ui.parallaxEnabled = this.project.settings.defaultParallaxEnabled;
     this.emit();
   }
 
@@ -121,7 +122,7 @@ export class ProjectStore {
   }
 
   patchSettings(partial: Partial<ProjectSettings>) {
-    this.project.settings = { ...this.project.settings, ...partial };
+    this.project.settings = sanitizeSettings({ ...this.project.settings, ...partial });
     this.touch();
   }
 

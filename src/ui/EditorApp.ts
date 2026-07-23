@@ -610,8 +610,6 @@ export class EditorApp {
       yaw: v.yaw,
       pitch: v.pitch,
       targetSceneId: other.id,
-      rotation: 0,
-      transition: 'fly',
     };
     store.addHotspot(hs);
     store.showResultDialog({

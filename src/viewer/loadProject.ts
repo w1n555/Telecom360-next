@@ -1,7 +1,8 @@
 import {
   PACKAGE_VERSION,
-  defaultSettings,
   isKnownPackageFormat,
+  sanitizeHotspot,
+  sanitizeSettings,
   type ProjectDocument,
   type ProjectPackage,
 } from '../core/types/project';
@@ -31,7 +32,8 @@ export async function loadPackage(): Promise<ProjectDocument> {
       s.source.url = assetUrl(s.source.url);
     }
     delete (s as { measurements?: unknown }).measurements;
+    s.hotspots = (s.hotspots || []).map((h) => sanitizeHotspot(h));
   }
-  pkg.project.settings = { ...defaultSettings(), ...pkg.project.settings };
+  pkg.project.settings = sanitizeSettings(pkg.project.settings);
   return pkg.project;
 }

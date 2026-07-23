@@ -32,8 +32,6 @@ export interface SceneHotspot {
   yaw: number;
   pitch: number;
   targetSceneId: string;
-  rotation: number;
-  transition?: 'fly' | 'cut';
 }
 
 export type Hotspot = InfoHotspot | SceneHotspot;
@@ -59,16 +57,15 @@ export interface Scene {
 }
 
 export interface ProjectSettings {
-  mouseViewMode: 'drag';
-  autorotateEnabled: boolean;
-  fullscreenButton: boolean;
-  viewControlButtons: boolean;
+  /**
+   * Seed for Editor UI when a project is loaded (WASD always on in practice).
+   * Viewer forces parallax on regardless.
+   */
   defaultParallaxEnabled: boolean;
   /** camera offset limit when 3D move mode is on (world units) */
   parallaxRadius: number;
   sphereRadius: number;
   anisotropy: number;
-  locale: 'zh-Hant';
 }
 
 export interface DeployMeta {
@@ -107,19 +104,49 @@ export const DEFAULT_VIEW: ViewParams = {
 
 export function defaultSettings(): ProjectSettings {
   return {
-    mouseViewMode: 'drag',
-    /** Viewer has autorotate button; default OFF */
-    autorotateEnabled: false,
-    /** Viewer always shows fullscreen button */
-    fullscreenButton: true,
-    viewControlButtons: true,
     /** 3D WASD always on in viewer/editor (no toggle button) */
     defaultParallaxEnabled: true,
     /** WASD move limit from sphere centre (larger = more walk range) */
     parallaxRadius: 120,
     sphereRadius: 500,
     anisotropy: 16,
-    locale: 'zh-Hant',
+  };
+}
+
+/**
+ * Keep only live settings keys (drop legacy package fields such as
+ * mouseViewMode / autorotateEnabled / fullscreenButton / viewControlButtons / locale).
+ */
+export function sanitizeSettings(raw: Partial<ProjectSettings> | null | undefined): ProjectSettings {
+  const d = defaultSettings();
+  const s = raw || {};
+  return {
+    defaultParallaxEnabled:
+      typeof s.defaultParallaxEnabled === 'boolean' ? s.defaultParallaxEnabled : d.defaultParallaxEnabled,
+    parallaxRadius: typeof s.parallaxRadius === 'number' ? s.parallaxRadius : d.parallaxRadius,
+    sphereRadius: typeof s.sphereRadius === 'number' ? s.sphereRadius : d.sphereRadius,
+    anisotropy: typeof s.anisotropy === 'number' ? s.anisotropy : d.anisotropy,
+  };
+}
+
+/** Drop unused hotspot keys (e.g. old rotation / transition on scene links). */
+export function sanitizeHotspot(h: Hotspot): Hotspot {
+  if (h.type === 'info') {
+    return {
+      id: h.id,
+      type: 'info',
+      yaw: h.yaw,
+      pitch: h.pitch,
+      title: h.title ?? '',
+      text: h.text ?? '',
+    };
+  }
+  return {
+    id: h.id,
+    type: 'scene',
+    yaw: h.yaw,
+    pitch: h.pitch,
+    targetSceneId: h.targetSceneId ?? '',
   };
 }
 
