@@ -14,7 +14,7 @@ Deploy with a single **Release ZIP**: download → unzip → **copy into the IIS
 
 ## Features
 
-- Multi-scene **equirectangular** tours (including high-res images such as **11904×5952**).
+- Multi-scene **equirectangular** tours (including high-res such as **11904×5952** **JPG/PNG** **2:1** aspect images).
 - **Info annotations** and **links between scenes**.
 - Per-scene **initial view**.
 - Slight 3D walk with **WASD / QE** (**always on**, no toggle).
@@ -166,7 +166,7 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 
 ## 功能
 
-- 建立 **多場景** equirectangular 全景（可含高解像如 **11904×5952**）
+- 建立 **多場景** equirectangular 全景（可含高解像 2:1 比例如 **11904×5952** 圖片）
 - 加入 **注解標示**、**場景之間跳轉**
 - 設定每場景 **初始視角**
 - 以 **WASD / QE** 輕微 3D 移動（**預設開、無開關掣**）
