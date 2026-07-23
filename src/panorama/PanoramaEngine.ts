@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, directionToSpherical, sphericalToDirection } from '../utils/math';
+import { clamp, directionToSpherical, shortestAngleDelta, sphericalToDirection, wrapAngle } from '../utils/math';
 import { FOV_MAX, FOV_MIN, type ProjectSettings, type ViewParams } from '../core/types/project';
 
 export interface EngineCallbacks {
@@ -283,22 +283,32 @@ export class PanoramaEngine {
 
   /**
    * Aim at hotspot icon and zoom in ~30% (FOV × 0.7), then caller fades to next scene.
+   * Yaw uses shortest-path delta so multi-turn spins don't reverse-unspool before transition.
    */
   async aimAndZoomIn(targetYaw: number, targetPitch: number, ms = 380): Promise<void> {
     const start = this.getView();
     const endFov = clamp(start.fov * 0.7, FOV_MIN, FOV_MAX); // ~30% zoom-in
+    // Shortest arc on the sphere (not raw targetYaw - start.yaw, which rewinds full turns)
+    const dyaw = shortestAngleDelta(start.yaw, targetYaw);
+    const dpitch = targetPitch - start.pitch;
+    const dfov = endFov - start.fov;
     const t0 = performance.now();
     await new Promise<void>((resolve) => {
       const step = () => {
         if (this.disposed) return resolve();
         const u = clamp((performance.now() - t0) / ms, 0, 1);
         const e = u * u * (3 - 2 * u);
-        this.yaw = start.yaw + (targetYaw - start.yaw) * e;
-        this.pitch = start.pitch + (targetPitch - start.pitch) * e;
-        this.fov = start.fov + (endFov - start.fov) * e;
+        this.yaw = start.yaw + dyaw * e;
+        this.pitch = start.pitch + dpitch * e;
+        this.fov = start.fov + dfov * e;
         this.applyView();
         if (u < 1) requestAnimationFrame(step);
-        else resolve();
+        else {
+          // Canonicalize after aim so subsequent aims stay well-behaved
+          this.yaw = wrapAngle(this.yaw);
+          this.applyView();
+          resolve();
+        }
       };
       requestAnimationFrame(step);
     });
@@ -349,6 +359,8 @@ export class PanoramaEngine {
   }
 
   private applyView() {
+    // Keep yaw in (-π, π] so multi-turn spins don't unbounded-grow and break aim lerps
+    this.yaw = wrapAngle(this.yaw);
     this.camera.fov = THREE.MathUtils.radToDeg(this.fov);
     this.camera.updateProjectionMatrix();
 

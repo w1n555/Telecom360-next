@@ -23,3 +23,25 @@ export function greatCircleAngle(a: { yaw: number; pitch: number }, b: { yaw: nu
 export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
+
+const TAU = Math.PI * 2;
+
+/**
+ * Shortest signed yaw delta from `from` to `to` (radians), in (-π, π].
+ * Critical for aim animations after the user spins multiple full turns —
+ * linear (to - from) would reverse every extra revolution.
+ */
+export function shortestAngleDelta(from: number, to: number): number {
+  let d = ((to - from) % TAU + TAU) % TAU; // [0, 2π)
+  if (d > Math.PI) d -= TAU;
+  return d;
+}
+
+/** Wrap angle to (-π, π]. Keeps yaw from growing without bound. */
+export function wrapAngle(a: number): number {
+  let x = ((a + Math.PI) % TAU + TAU) % TAU; // [0, 2π)
+  x -= Math.PI; // [-π, π)
+  // Map -π to +π for a stable canonical range (-π, π]
+  if (x <= -Math.PI) x += TAU;
+  return x;
+}
