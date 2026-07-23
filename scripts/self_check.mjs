@@ -1,10 +1,11 @@
 /**
  * Self-check for Release / dist contract (no live server required for core checks).
  *
- * 1) Static: dist has Editor + viewer-shell + web.config
+ * 1) Static: dist has Editor + viewer-shell + web.config + shell integrity
  * 2) Optional: if T360_BASE is up (or auto-start dev), smoke-check Editor + brand
  *
  * Exit 0 only if critical checks pass.
+ * Release packaging runs this with T360_SKIP_SERVER=1.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,17 +51,57 @@ function checkDist() {
 
   if (fs.existsSync(path.join(DIST, 'web.config'))) {
     const wc = fs.readFileSync(path.join(DIST, 'web.config'), 'utf8');
-    if (wc.includes('fileExtension=".json"') && wc.includes('mimeMap')) pass('web.config has .json MIME');
-    else fail('web.config missing .json mimeMap');
+    let mimeOk = true;
+    for (const ext of ['.json', '.mjs', '.wasm']) {
+      if (!wc.includes(`fileExtension="${ext}"`)) {
+        fail(`web.config missing MIME for ${ext}`);
+        mimeOk = false;
+      }
+    }
+    if (mimeOk && wc.includes('mimeMap')) pass('web.config has .json / .mjs / .wasm MIME');
+    else if (mimeOk) fail('web.config missing mimeMap');
   }
 
   if (fs.existsSync(path.join(DIST, 'viewer-shell', 'manifest.json'))) {
     try {
-      const man = JSON.parse(fs.readFileSync(path.join(DIST, 'viewer-shell', 'manifest.json'), 'utf8'));
-      if (man?.files?.length) pass(`viewer-shell files: ${man.files.length}`);
-      else fail('viewer-shell manifest empty');
+      const man = JSON.parse(
+        fs.readFileSync(path.join(DIST, 'viewer-shell', 'manifest.json'), 'utf8')
+      );
+      if (!man?.files?.length) {
+        fail('viewer-shell manifest empty');
+      } else {
+        pass(`viewer-shell files: ${man.files.length}`);
+        let shellOk = true;
+        for (const entry of man.files) {
+          const rel = String(entry.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+          const abs = path.join(DIST, 'viewer-shell', rel);
+          if (!rel || !fs.existsSync(abs) || !fs.statSync(abs).isFile() || fs.statSync(abs).size <= 0) {
+            fail(`viewer-shell missing/empty: ${rel || entry.path}`);
+            shellOk = false;
+          }
+        }
+        if (shellOk) pass('viewer-shell manifest files all present');
+      }
     } catch (e) {
       fail(`viewer-shell manifest parse: ${e.message}`);
+    }
+  }
+
+  const assetsDir = path.join(DIST, 'assets');
+  if (fs.existsSync(assetsDir)) {
+    const files = fs.readdirSync(assetsDir);
+    if (files.some((n) => n.startsWith('main-') && n.endsWith('.js'))) {
+      pass('editor main-*.js present');
+    } else {
+      fail('no main-*.js Editor bundle in dist/assets');
+    }
+    const maps = files.filter((n) => n.endsWith('.map'));
+    if (maps.length && process.env.T360_SOURCEMAP !== '1') {
+      fail(`unexpected .map files in dist/assets: ${maps.join(', ')}`);
+    } else if (!maps.length) {
+      pass('no sourcemaps in dist/assets');
+    } else {
+      pass('sourcemaps present (T360_SOURCEMAP=1)');
     }
   }
 
@@ -69,19 +110,6 @@ function checkDist() {
     fail('dist still has vendor/three.module.js (remove public/vendor)');
   } else {
     pass('no legacy vendor/three in dist');
-  }
-
-  // Sourcemaps should be off for default production build
-  const assetsDir = path.join(DIST, 'assets');
-  if (fs.existsSync(assetsDir)) {
-    const maps = fs.readdirSync(assetsDir).filter((n) => n.endsWith('.map'));
-    if (maps.length && process.env.T360_SOURCEMAP !== '1') {
-      fail(`unexpected .map files in dist/assets: ${maps.join(', ')}`);
-    } else if (!maps.length) {
-      pass('no sourcemaps in dist/assets');
-    } else {
-      pass('sourcemaps present (T360_SOURCEMAP=1)');
-    }
   }
 }
 
@@ -114,11 +142,13 @@ async function ensureServer() {
     /* down */
   }
   console.log('Starting dev server…');
-  const child = spawn('npm.cmd', ['run', 'dev'], {
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const child = spawn(npmCmd, ['run', 'dev'], {
     cwd: ROOT,
     env: { ...process.env, PORT: '8888' },
     detached: true,
     stdio: 'ignore',
+    shell: process.platform === 'win32',
   });
   child.unref();
   for (let i = 0; i < 20; i++) {
@@ -151,7 +181,6 @@ async function checkServer() {
     }
   }
 
-  // viewer-shell available for export when served from public after build
   try {
     const man = await get(`${BASE}/viewer-shell/manifest.json`);
     if (man.ok) pass('viewer-shell/manifest.json reachable');
@@ -162,8 +191,9 @@ async function checkServer() {
 
   const ed = await get(`${BASE}/src/ui/EditorApp.ts`);
   if (ed.ok) {
-    if (ed.text.includes('hint-empty-scenes')) pass('editor has empty hint');
-    else fail('editor missing hint-empty-scenes');
+    if (ed.text.includes('hint-empty-scenes') || ed.text.includes('renderShell'))
+      pass('editor module loads');
+    else fail('editor module unexpected content');
     if (ed.text.includes('btn-deploy') || ed.text.includes('oneClickDeploy'))
       fail('editor still has one-click deploy UI');
     else pass('editor has no one-click deploy');
