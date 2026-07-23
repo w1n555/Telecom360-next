@@ -6,14 +6,16 @@
  *   → npm run build, then zip dist/ → release/Telecom360-next-v{version}-iis.zip
  *
  * ZIP contents (unzip and copy all into IIS site root):
- *   index.html, assets/, brand/, viewer-shell/, web.config, …
+ *   index.html, assets/, brand/, viewer-shell/, web.config, RELEASE.txt
+ *
+ * Excluded from ZIP (not needed on IIS):
+ *   dist/viewer/  — Vite multi-page intermediate (shell is viewer-shell/)
+ *   *.map, .gitkeep, OS junk
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -35,7 +37,7 @@ function mustExist(rel, label) {
 
 function validateDist() {
   mustExist('index.html', 'Editor index.html');
-  mustExist('web.config', 'web.config (MIME for .json / .mjs)');
+  mustExist('web.config', 'web.config (MIME for .json / .mjs / .wasm)');
   mustExist(path.join('viewer-shell', 'index.html'), 'viewer-shell/index.html');
   mustExist(path.join('viewer-shell', 'manifest.json'), 'viewer-shell/manifest.json');
 
@@ -47,6 +49,9 @@ function validateDist() {
   if (!assetFiles.length) {
     throw new Error('Release check failed: dist/assets/ has no files');
   }
+  if (!assetFiles.some((n) => n.startsWith('main-'))) {
+    throw new Error('Release check failed: dist/assets/ has no main-* Editor bundle');
+  }
 
   const brand = path.join(DIST, 'brand');
   if (!fs.existsSync(brand) || !fs.statSync(brand).isDirectory()) {
@@ -54,8 +59,10 @@ function validateDist() {
   }
 
   const webConfig = fs.readFileSync(path.join(DIST, 'web.config'), 'utf8');
-  if (!webConfig.includes('fileExtension=".json"') || !webConfig.includes('mimeMap')) {
-    throw new Error('Release check failed: dist/web.config missing .json MIME mapping');
+  for (const ext of ['.json', '.mjs', '.wasm']) {
+    if (!webConfig.includes(`fileExtension="${ext}"`) || !webConfig.includes('mimeMap')) {
+      throw new Error(`Release check failed: dist/web.config missing MIME for ${ext}`);
+    }
   }
 
   const man = JSON.parse(
@@ -65,8 +72,28 @@ function validateDist() {
     throw new Error('Release check failed: viewer-shell/manifest.json has empty files list');
   }
 
+  // Every listed shell file must exist on disk with non-zero size
+  for (const entry of man.files) {
+    const rel = String(entry.path || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '');
+    if (!rel || rel.includes('..')) {
+      throw new Error(`Release check failed: invalid viewer-shell path in manifest: ${entry.path}`);
+    }
+    const abs = path.join(DIST, 'viewer-shell', rel);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+      throw new Error(`Release check failed: viewer-shell missing file from manifest: ${rel}`);
+    }
+    if (fs.statSync(abs).size <= 0) {
+      throw new Error(`Release check failed: viewer-shell file empty: ${rel}`);
+    }
+  }
+
   console.log('[package_release] dist validation OK');
-  console.log('[package_release]   viewer-shell files:', man.files.map((f) => f.path).join(', '));
+  console.log(
+    '[package_release]   viewer-shell files:',
+    man.files.map((f) => f.path).join(', ')
+  );
 }
 
 function writeReleaseNotes(version) {
@@ -91,9 +118,21 @@ See README.md for full usage.
   fs.writeFileSync(path.join(DIST, 'RELEASE.txt'), text, 'utf8');
 }
 
+/**
+ * Paths relative to dist/ that must not ship in the IIS Release ZIP.
+ * - viewer/ is Vite multi-page intermediate; production Viewer is viewer-shell/
+ */
+function shouldSkipReleasePath(relPosix, baseName) {
+  if (baseName.endsWith('.map')) return true;
+  if (baseName === '.DS_Store' || baseName === 'Thumbs.db') return true;
+  if (baseName === '.gitkeep') return true;
+  // Intermediate Vite viewer page (not the export shell)
+  if (relPosix === 'viewer' || relPosix.startsWith('viewer/')) return true;
+  return false;
+}
+
 /** Prefer system tar (Windows 10+ / macOS / Linux) to avoid extra deps. */
 function zipWithTar(zipPath, sourceDir) {
-  // tar -a -c -f zip -C sourceDir .
   const r = spawnSync(
     'tar',
     ['-a', '-c', '-f', zipPath, '-C', sourceDir, '.'],
@@ -105,67 +144,73 @@ function zipWithTar(zipPath, sourceDir) {
   }
 }
 
-function shouldSkipReleaseFile(name) {
-  // Never ship source maps or OS junk in the IIS ZIP
-  if (name.endsWith('.map')) return true;
-  if (name === '.DS_Store' || name === 'Thumbs.db') return true;
-  return false;
-}
-
 async function zipWithJszip(zipPath, sourceDir) {
-  // Fallback if tar unavailable: use jszip from project deps
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
+  let fileCount = 0;
 
   function addDir(dir, prefix) {
     for (const name of fs.readdirSync(dir)) {
       if (name === '.' || name === '..') continue;
-      if (shouldSkipReleaseFile(name)) continue;
       const abs = path.join(dir, name);
       const rel = prefix ? `${prefix}/${name}` : name;
+      const relPosix = rel.replace(/\\/g, '/');
+      if (shouldSkipReleasePath(relPosix, name)) continue;
       const st = fs.statSync(abs);
       if (st.isDirectory()) {
-        addDir(abs, rel.replace(/\\/g, '/'));
+        addDir(abs, relPosix);
       } else {
-        zip.file(rel.replace(/\\/g, '/'), fs.readFileSync(abs));
+        zip.file(relPosix, fs.readFileSync(abs));
+        fileCount += 1;
       }
     }
   }
 
   addDir(sourceDir, '');
+  if (fileCount < 5) {
+    throw new Error(`Release ZIP too sparse (${fileCount} files) — dist may be incomplete`);
+  }
+
   const buf = await zip.generateAsync({
     type: 'nodebuffer',
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   });
   fs.writeFileSync(zipPath, buf);
+  return fileCount;
 }
 
-/** Prefer JSZip so we can exclude .map files consistently on all platforms. */
+/** Prefer JSZip so we can exclude paths consistently on all platforms. */
 async function createZip(zipPath, sourceDir) {
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-  await zipWithJszip(zipPath, sourceDir);
+  const count = await zipWithJszip(zipPath, sourceDir);
   if (!fs.existsSync(zipPath) || fs.statSync(zipPath).size < 100) {
-    // last resort: tar (may include maps)
+    // last resort: tar (may include paths we prefer to skip)
     zipWithTar(zipPath, sourceDir);
-    console.log('[package_release] ZIP via tar (fallback)');
+    console.log('[package_release] ZIP via tar (fallback — may include viewer/)');
     return;
   }
-  console.log('[package_release] ZIP via JSZip');
+  console.log(`[package_release] ZIP via JSZip (${count} files)`);
+}
+
+function runNpmBuild() {
+  console.log('[package_release] running npm run build…');
+  // Prefer npm.cmd on Windows; fall back to npm for Unix CI
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const build = spawnSync(npmCmd, ['run', 'build'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
+  if (build.status !== 0) {
+    process.exit(build.status ?? 1);
+  }
 }
 
 async function main() {
   const skipBuild = process.argv.includes('--no-build');
   if (!skipBuild) {
-    console.log('[package_release] running npm run build…');
-    const build = spawnSync('npm.cmd', ['run', 'build'], {
-      cwd: ROOT,
-      stdio: 'inherit',
-      shell: true,
-    });
-    if (build.status !== 0) {
-      process.exit(build.status ?? 1);
-    }
+    runNpmBuild();
   } else if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     throw new Error('dist/ missing — run npm run build first (or omit --no-build)');
   }
@@ -179,6 +224,28 @@ async function main() {
   const zipPath = path.join(RELEASE_DIR, zipName);
 
   await createZip(zipPath, DIST);
+
+  // Post-zip sanity: critical paths present, intermediate viewer/ absent
+  const JSZip = (await import('jszip')).default;
+  const z = await JSZip.loadAsync(fs.readFileSync(zipPath));
+  const names = Object.keys(z.files).filter((n) => !z.files[n].dir);
+  const required = [
+    'index.html',
+    'web.config',
+    'viewer-shell/index.html',
+    'viewer-shell/manifest.json',
+  ];
+  for (const r of required) {
+    if (!names.includes(r) && !names.some((n) => n.replace(/^\.\//, '') === r)) {
+      throw new Error(`Release ZIP missing required path: ${r}`);
+    }
+  }
+  if (names.some((n) => n === 'viewer/index.html' || n.startsWith('viewer/'))) {
+    throw new Error('Release ZIP must not include dist/viewer/ intermediate output');
+  }
+  if (names.some((n) => n.endsWith('.gitkeep') || n.endsWith('.map'))) {
+    throw new Error('Release ZIP must not include .gitkeep or .map files');
+  }
 
   const sizeMb = (fs.statSync(zipPath).size / (1024 * 1024)).toFixed(2);
   console.log(`[package_release] wrote ${zipPath} (${sizeMb} MB)`);
