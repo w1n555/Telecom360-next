@@ -54,7 +54,7 @@ See also [docs/IIS_DEPLOY.md](docs/IIS_DEPLOY.md).
 ### 2. Create a tour (Editor)
 
 1. Open the Editor in the browser.
-2. Fill **專案名稱** (project name, required), e.g. `FOS ControlRoom`.
+2. Fill **專案名稱** (project name, required), e.g. `FOS - Control Room`.
 3. Fill **SITE_CODE**, **ROOM_NAME**, **PHOTO_DATE** (required; used in the publish path).
 4. Click **新增全景圖片** and add equirectangular **JPG/PNG** (about **2:1** aspect).
 5. Optional: **注解**, **場景連結**, **設置初始視角**, drag scenes to reorder.
@@ -206,7 +206,7 @@ Upload `release/Telecom360-next-v{version}-iis.zip` as a **GitHub Release** asse
 ### 2. 製作導覽（編輯器）
 
 1. 瀏覽器開啟編輯器。
-2. 填 **專案名稱**（必填），例如 `FOS ControlRoom`。
+2. 填 **專案名稱**（必填），例如 `FOS - Control Room`。
 3. 填 **SITE_CODE**、**ROOM_NAME**、**PHOTO_DATE**（必填；決定發佈路徑）。
 4. 按 **新增全景圖片**，加入約 **2:1** 的 equirectangular **JPG/PNG**。
 5. 可選：**注解**、**場景連結**、**設置初始視角**、拖曳調整場景順序。
