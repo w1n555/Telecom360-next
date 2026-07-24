@@ -1,5 +1,7 @@
 /** Telecom360-next project schema (v1). Demo values in docs only — live data comes from user uploads. */
 
+import { randomUUID } from '../../utils/id';
+
 export const PACKAGE_FORMAT = 'telecom360-next-package' as const;
 /** Accept packages exported under the former repo/product name */
 export const PACKAGE_FORMAT_LEGACY = 'telecom360-threejs-package' as const;
@@ -166,7 +168,7 @@ export function exportReady(project: { name: string; deploy: { siteCode: string;
 export function emptyProject(name = ''): ProjectDocument {
   const now = new Date().toISOString();
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     name,
     settings: defaultSettings(),
     scenes: [],

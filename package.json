@@ -1,6 +1,6 @@
 {
   "name": "telecom360-next",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Telecom360-next panorama editor & viewer — three.js + TypeScript, IIS static (export ZIP + manual copy)",
   "type": "module",
