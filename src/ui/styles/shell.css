@@ -94,7 +94,8 @@
 
 .main {
   display: grid;
-  grid-template-columns: minmax(280px, 320px) 1fr minmax(260px, 300px);
+  /* Inspector column ~30% wider for larger type */
+  grid-template-columns: minmax(280px, 320px) 1fr minmax(340px, 390px);
   min-height: 0;
 }
 
@@ -106,10 +107,24 @@
   padding: 14px;
 }
 
-.sidebar h2,
-.inspector h2 {
+/* Inspector: one shared size (~30% above former 13px body/chrome) */
+.inspector {
+  --inspector-fs: 17px;
+  font-size: var(--inspector-fs);
+}
+
+.sidebar h2 {
   margin: 0 0 10px;
   font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  font-weight: 650;
+}
+
+.inspector h2 {
+  margin: 0 0 10px;
+  font-size: var(--inspector-fs);
   text-transform: none;
   letter-spacing: 0.04em;
   color: #94a3b8;
@@ -539,9 +554,15 @@
 
 .inspector label {
   display: block;
-  font-size: 11px;
+  font-size: var(--inspector-fs);
   color: #94a3b8;
   margin: 10px 0 4px;
+  font-weight: 600;
+}
+
+.inspector .hint {
+  font-size: var(--inspector-fs);
+  line-height: 1.45;
 }
 
 .inspector input,
@@ -553,10 +574,24 @@
   background: #111827;
   color: #fff;
   padding: 8px 10px;
+  font-size: var(--inspector-fs);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.inspector select {
+  /* Ensure dropdown list text matches control (browser-dependent but helps) */
+  font-size: var(--inspector-fs);
+}
+
+.inspector .btn {
+  font-size: var(--inspector-fs);
+  font-weight: 600;
+  padding: 10px 14px;
 }
 
 .inspector textarea {
-  min-height: 90px;
+  min-height: 110px;
   resize: vertical;
 }
 
