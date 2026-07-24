@@ -36,7 +36,10 @@ export class InspectorPanel {
     const scene = store.activeScene;
     const hs = scene?.hotspots.find((h) => h.id === store.ui.selectedHotspotId);
     const namesSig = store.project.scenes.map((s) => `${s.id}=${s.name}`).join('|');
-    const key = `${store.ui.activeSceneId}|${store.ui.selectedHotspotId}|${namesSig}`;
+    // Include scene-link target so changing the dropdown invalidates the panel
+    // (otherwise early-return leaves #hs-go bound to a stale hotspot object).
+    const targetSig = hs && hs.type === 'scene' ? (hs as SceneHotspot).targetSceneId || '' : '';
+    const key = `${store.ui.activeSceneId}|${store.ui.selectedHotspotId}|${namesSig}|${targetSig}`;
     if (key === this.inspectorKey && body.childElementCount > 0) {
       this.refreshTargetDropdownLabels();
       return;
@@ -53,6 +56,8 @@ export class InspectorPanel {
       return;
     }
 
+    const hotspotId = hs.id;
+
     if (hs.type === 'info') {
       body.innerHTML = `
         <p class="hint">注解標示 · 可在預覽拖曳位置 · 檢視器滑鼠移上圖示顯示內容</p>
@@ -63,10 +68,10 @@ export class InspectorPanel {
         </div>
       `;
       body.querySelector('#hs-title')!.addEventListener('input', (e) => {
-        store.updateHotspot(hs.id, { title: (e.target as HTMLInputElement).value }, { silent: true });
+        store.updateHotspot(hotspotId, { title: (e.target as HTMLInputElement).value }, { silent: true });
       });
       body.querySelector('#hs-text')!.addEventListener('input', (e) => {
-        store.updateHotspot(hs.id, { text: (e.target as HTMLTextAreaElement).value }, { silent: true });
+        store.updateHotspot(hotspotId, { text: (e.target as HTMLTextAreaElement).value }, { silent: true });
       });
     } else {
       const options = store.project.scenes
@@ -90,20 +95,38 @@ export class InspectorPanel {
         </div>
       `;
       body.querySelector('#hs-target')!.addEventListener('change', (e) => {
-        store.updateHotspot(hs.id, { targetSceneId: (e.target as HTMLSelectElement).value });
+        const next = (e.target as HTMLSelectElement).value;
+        // Invalidate before emit so re-render does not early-return on same key
         this.inspectorKey = '';
+        store.updateHotspot(hotspotId, { targetSceneId: next });
       });
+      // Always resolve target from store + dropdown (never a closed-over hotspot snapshot)
       body.querySelector('#hs-go')!.addEventListener('click', () => {
-        this.handlers.onGoToScene(hs as SceneHotspot);
+        const live = store.activeScene?.hotspots.find((h) => h.id === hotspotId);
+        if (!live || live.type !== 'scene') return;
+        const sel = body.querySelector('#hs-target') as HTMLSelectElement | null;
+        const targetSceneId = (sel?.value || live.targetSceneId || '').trim();
+        if (!targetSceneId) {
+          store.setToast(t('emptyTarget'));
+          return;
+        }
+        // Persist dropdown choice in case user never blurred/changed after keyboard nav
+        if (targetSceneId !== live.targetSceneId) {
+          store.updateHotspot(hotspotId, { targetSceneId }, { silent: true });
+        }
+        this.handlers.onGoToScene({ ...live, targetSceneId });
       });
     }
     body.querySelector('#hs-del')!.addEventListener('click', () => {
+      const live = store.activeScene?.hotspots.find((h) => h.id === hotspotId) || hs;
       let detailLine = '';
-      if (hs.type === 'info') {
-        const name = (hs.title || '').trim() || '（未命名注解）';
+      if (live.type === 'info') {
+        const name = (live.title || '').trim() || '（未命名注解）';
         detailLine = `標註：${name}`;
       } else {
-        const tgt = store.project.scenes.find((s) => s.id === hs.targetSceneId);
+        const sel = body.querySelector('#hs-target') as HTMLSelectElement | null;
+        const tid = (sel?.value || (live as SceneHotspot).targetSceneId || '').trim();
+        const tgt = store.project.scenes.find((s) => s.id === tid);
         const name = tgt?.name?.trim() || '（未選擇目標場景）';
         detailLine = `目標場景：${name}`;
       }
@@ -113,7 +136,7 @@ export class InspectorPanel {
         showInput: false,
         danger: true,
         okLabel: t('deleteConfirm'),
-        context: { type: 'delete-hotspot', hotspotId: hs.id },
+        context: { type: 'delete-hotspot', hotspotId },
       });
     });
   }

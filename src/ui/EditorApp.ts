@@ -531,10 +531,15 @@ export class EditorApp {
   };
 
   private async goToScene(h: SceneHotspot) {
-    if (!h.targetSceneId || !this.engine) return;
+    if (!this.engine) return;
+    // Prefer live store data (inspector may pass a snapshot)
+    const live = store.activeScene?.hotspots.find((x) => x.id === h.id);
+    const link: SceneHotspot =
+      live && live.type === 'scene' ? { ...live, targetSceneId: h.targetSceneId || live.targetSceneId } : h;
+    if (!link.targetSceneId) return;
     this.clearHotspotLayer();
-    await aimAndFadeOut(this.engine, { yaw: h.yaw, pitch: h.pitch });
-    store.selectScene(h.targetSceneId);
+    await aimAndFadeOut(this.engine, { yaw: link.yaw, pitch: link.pitch });
+    store.selectScene(link.targetSceneId);
     // loadActiveScene re-enables icons after new image settles
     await new Promise((r) => setTimeout(r, 80));
     fadeCanvasIn(this.engine);
