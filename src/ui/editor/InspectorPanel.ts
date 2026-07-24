@@ -8,8 +8,11 @@ function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/`/g, '&#96;');
 }
 
-/** Short label for narrow inspector dropdown (full name kept in title / value). */
-function ellipsisLabel(s: string, maxChars = 22): string {
+/**
+ * Short label for inspector dropdown (full name kept in title / value).
+ * ~36 letters fits ~300px panel at 14px better than the old 22-char cut.
+ */
+function ellipsisLabel(s: string, maxChars = 36): string {
   const t = (s || '').trim();
   if (t.length <= maxChars) return t;
   return `${t.slice(0, Math.max(1, maxChars - 1))}…`;
