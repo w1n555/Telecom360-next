@@ -94,8 +94,7 @@
 
 .main {
   display: grid;
-  /* Inspector column ~30% wider for larger type */
-  grid-template-columns: minmax(280px, 320px) 1fr minmax(340px, 390px);
+  grid-template-columns: minmax(280px, 320px) 1fr minmax(260px, 300px);
   min-height: 0;
 }
 
@@ -569,6 +568,7 @@
 .inspector textarea,
 .inspector select {
   width: 100%;
+  max-width: 100%;
   border-radius: 10px;
   border: 1px solid #334155;
   background: #111827;
@@ -577,11 +577,15 @@
   font-size: var(--inspector-fs);
   font-weight: 600;
   line-height: 1.35;
+  box-sizing: border-box;
 }
 
+/* Closed <select>: long labels show as … (native open list is browser-limited) */
 .inspector select {
-  /* Ensure dropdown list text matches control (browser-dependent but helps) */
   font-size: var(--inspector-fs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inspector .btn {

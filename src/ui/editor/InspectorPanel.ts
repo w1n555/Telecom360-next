@@ -8,6 +8,13 @@ function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/`/g, '&#96;');
 }
 
+/** Short label for narrow inspector dropdown (full name kept in title / value). */
+function ellipsisLabel(s: string, maxChars = 22): string {
+  const t = (s || '').trim();
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, Math.max(1, maxChars - 1))}…`;
+}
+
 export type InspectorPanelHandlers = {
   onGoToScene: (h: SceneHotspot) => void;
   onInspectorKeyInvalidate: () => void;
@@ -76,16 +83,19 @@ export class InspectorPanel {
     } else {
       const options = store.project.scenes
         .filter((s) => s.id !== scene.id)
-        .map(
-          (s) =>
-            `<option value="${s.id}" ${s.id === hs.targetSceneId ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
-        )
+        .map((s) => {
+          const full = (s.name || '').trim() || s.id;
+          const short = ellipsisLabel(full);
+          return `<option value="${s.id}" title="${escapeAttr(full)}" ${s.id === hs.targetSceneId ? 'selected' : ''}>${escapeHtml(short)}</option>`;
+        })
         .join('');
+      const selectedName =
+        store.project.scenes.find((s) => s.id === hs.targetSceneId)?.name?.trim() || '';
       body.innerHTML = `
         <p class="hint">場景連結 · 點圖示只選取；用下方按鈕前往</p>
         <label>${t('selectTarget')}
-          <select id="hs-target">
-            <option value="">${t('emptyTarget')}</option>
+          <select id="hs-target" title="${escapeAttr(selectedName || t('emptyTarget'))}">
+            <option value="">${escapeHtml(ellipsisLabel(t('emptyTarget')))}</option>
             ${options}
           </select>
         </label>
@@ -95,7 +105,11 @@ export class InspectorPanel {
         </div>
       `;
       body.querySelector('#hs-target')!.addEventListener('change', (e) => {
-        const next = (e.target as HTMLSelectElement).value;
+        const sel = e.target as HTMLSelectElement;
+        const next = sel.value;
+        const full =
+          store.project.scenes.find((s) => s.id === next)?.name?.trim() || t('emptyTarget');
+        sel.title = full;
         // Invalidate before emit so re-render does not early-return on same key
         this.inspectorKey = '';
         store.updateHotspot(hotspotId, { targetSceneId: next });
@@ -148,11 +162,19 @@ export class InspectorPanel {
     if (!scene) return;
     for (const opt of Array.from(sel.options)) {
       if (!opt.value) {
-        opt.textContent = t('emptyTarget');
+        const empty = t('emptyTarget');
+        opt.textContent = ellipsisLabel(empty);
+        opt.title = empty;
         continue;
       }
       const s = store.project.scenes.find((x) => x.id === opt.value);
-      if (s) opt.textContent = s.name;
+      if (s) {
+        const full = (s.name || '').trim() || s.id;
+        opt.textContent = ellipsisLabel(full);
+        opt.title = full;
+      }
     }
+    const cur = sel.selectedOptions[0];
+    sel.title = cur?.title || cur?.textContent || '';
   }
 }
