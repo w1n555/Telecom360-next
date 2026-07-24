@@ -351,6 +351,8 @@ export class EditorApp {
         const act = target.dataset.act || (target.closest('[data-act]') as HTMLElement | null)?.dataset.act;
         if (act === 'del') {
           ev.stopPropagation();
+          // Switch preview to that scene first so user sees which image they are deleting
+          if (id !== store.ui.activeSceneId) store.selectScene(id);
           const sceneName = store.project.scenes.find((s) => s.id === id)?.name || '';
           store.showPromptDialog({
             title: t('deleteSceneTitle'),
@@ -366,6 +368,8 @@ export class EditorApp {
         }
         if (act === 'rename') {
           ev.stopPropagation();
+          // Switch preview to that scene first so user sees which image they are renaming
+          if (id !== store.ui.activeSceneId) store.selectScene(id);
           const current = store.project.scenes.find((s) => s.id === id)?.name || '';
           store.showPromptDialog({
             title: t('renameSceneTitle'),
