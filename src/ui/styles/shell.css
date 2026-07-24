@@ -108,7 +108,7 @@
 
 /* Inspector: one shared size (~30% above former 13px body/chrome) */
 .inspector {
-  --inspector-fs: 17px;
+  --inspector-fs: 16px;
   font-size: var(--inspector-fs);
 }
 
