@@ -42,6 +42,7 @@ export function editorShellHtml(): string {
           </aside>
           <section class="stage-wrap">
             <div class="stage-toolbar">
+              <span class="toolbar-scene-name" id="active-scene-name" hidden></span>
               <button type="button" class="btn" id="btn-info">${t('addInfo')}</button>
               <button type="button" class="btn" id="btn-scene-hs">${t('addSceneLink')}</button>
               <button type="button" class="btn" id="btn-initial">${t('setInitialView')}</button>

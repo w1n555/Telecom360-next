@@ -291,6 +291,24 @@
   border-bottom: 1px solid #1f2937;
 }
 
+/* Current panorama name — left of 新增注解 */
+.stage-toolbar .toolbar-scene-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(280px, 40vw);
+  margin: 0;
+  margin-right: 4px;
+  padding: 0 4px 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
 .stage-toolbar .btn {
   background: #1e293b;
   flex-shrink: 0;

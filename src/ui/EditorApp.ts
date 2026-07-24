@@ -289,6 +289,22 @@ export class EditorApp {
       uploadBtn.title = isEmpty ? '按此開始：上傳全景圖片' : '';
     }
 
+    // Toolbar: current image/scene name (live-updates on rename / scene switch)
+    const sceneNameEl = this.root.querySelector('#active-scene-name') as HTMLElement | null;
+    if (sceneNameEl) {
+      const active = store.activeScene;
+      if (active) {
+        const label = (active.name || '').trim() || active.id;
+        sceneNameEl.hidden = false;
+        if (sceneNameEl.textContent !== label) sceneNameEl.textContent = label;
+        sceneNameEl.title = label;
+      } else {
+        sceneNameEl.hidden = true;
+        sceneNameEl.textContent = '';
+        sceneNameEl.title = '';
+      }
+    }
+
     this.renderSceneList();
     this.syncBusyOverlay();
     this.inspector?.render();
